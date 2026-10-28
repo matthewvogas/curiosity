@@ -34,6 +34,30 @@ struct DeviceLiveScreen: View {
         }
     }
 
+    private var camera: some View {
+        Group {
+            if let frame = live.frame, let image = NSImage(data: frame) {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+            } else {
+                Rectangle().fill(Theme.fill).aspectRatio(4 / 3, contentMode: .fit)
+                    .overlay(ProgressView())
+            }
+        }
+        .clipShape(.rect(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Theme.hairline))
+        .shadow(color: .black.opacity(0.18), radius: 24, y: 8)
+        .overlay(alignment: .bottomLeading) {
+            Label(live.isReturning ? "Volviendo a su pose…" : live.isReady ? "En vivo" : "Conectando…",
+                  systemImage: live.isReady ? "circle.fill" : "circle.dotted")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(live.isReady ? Theme.ink : Theme.muted)
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .glassEffect(.regular, in: .capsule)
+                .padding(Theme.Space.m)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var start: some View {
         VStack(spacing: Theme.Space.l) {
             Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 40, weight: .light)).foregroundStyle(Theme.muted)
@@ -57,25 +81,12 @@ struct DeviceLiveScreen: View {
     }
 
     private var stage: some View {
-        ZStack(alignment: .bottomLeading) {
-            ZStack {
-                Color.black
-                if let frame = live.frame, let image = NSImage(data: frame) {
-                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-                        .padding(.trailing, Theme.chatWidth + Theme.Space.m)
-                } else {
-                    ProgressView().controlSize(.large)
-                }
-            }
-            .ignoresSafeArea()
-
-            Label(live.isReturning ? "Volviendo a su pose…" : live.isReady ? "En vivo" : "Conectando…",
-                  systemImage: live.isReady ? "circle.fill" : "circle.dotted")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(live.isReady ? Theme.ink : Theme.muted)
-                .padding(.horizontal, 14).padding(.vertical, 8)
-                .glassEffect(.regular, in: .capsule)
+        ZStack {
+            Theme.stage.ignoresSafeArea()
+            // La cámara en su propio contenedor, centrada en lo que deja libre el panel.
+            camera
                 .padding(Theme.Space.xl)
+                .padding(.trailing, Theme.chatWidth + Theme.Space.m)
         }
         .overlay(alignment: .trailing) {
             FloatingPanel(tabs: [(.chat, "Chat"), (.control, "Control")], selection: $tab) {
