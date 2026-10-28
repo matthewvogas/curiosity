@@ -28,7 +28,7 @@ function originOf(el) {
 export function parseURDF(text) {
   const doc = new DOMParser().parseFromString(text, "application/xml");
   const robot = doc.querySelector("robot");
-  if (!robot) throw new Error("El archivo no tiene <robot>: ¿es un URDF?");
+  if (!robot) throw new Error("The file has no <robot>: is it a URDF?");
   const materials = {};
   for (const m of robot.querySelectorAll(":scope > material")) {
     const c = m.querySelector("color");
@@ -90,6 +90,6 @@ export function parseURDF(text) {
       } : null,
     };
   });
-  const warnings = planar.map((n) => `${n}: articulación planar todavía no soportada; queda fija`);
+  const warnings = planar.map((n) => `${n}: planar joints aren't supported yet; kept fixed`);
   return { name: robot.getAttribute("name") || "robot", links, joints, cameras: [], home: {}, warnings };
 }

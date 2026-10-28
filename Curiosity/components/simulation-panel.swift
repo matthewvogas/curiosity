@@ -21,38 +21,38 @@ struct SimulationPanel: View {
     let onScreenshot: () -> Void
     let onShowModel: () -> Void
 
-    @AppStorage("panel.sections") private var closed = "Info,Sensores"
+    @AppStorage("panel.sections") private var closed = "Info,Sensors"
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
-                section("Simulación") {
+                section("Simulation") {
                     HStack(spacing: Theme.Space.s) {
-                        PillButton(title: state.paused ? "Correr" : "Pausar", prominent: true, action: onTogglePause)
-                        PillButton(title: "Reiniciar", action: onReset)
+                        PillButton(title: state.paused ? "Run" : "Pause", prominent: true, action: onTogglePause)
+                        PillButton(title: "Reset", action: onReset)
                     }
                     HStack(spacing: Theme.Space.s) {
-                        PillButton(title: "Recargar", action: onReload)
-                        PillButton(title: "Alinear", action: onAlign)
-                        PillButton(title: "Copiar estado", action: onCopyState)
+                        PillButton(title: "Reload", action: onReload)
+                        PillButton(title: "Align", action: onAlign)
+                        PillButton(title: "Copy state", action: onCopyState)
                     }
-                    Row("Velocidad") {
+                    Row("Speed") {
                         Picker("", selection: Binding(get: { speed }, set: { onSpeed($0) })) {
                             ForEach([0.1, 0.25, 0.5, 1, 2, 4], id: \.self) { Text(String(format: "%g×", $0)).tag($0) }
                         }
                         .labelsHidden().fixedSize()
                     }
-                    ValueSlider(title: "Ruido · escala", value: $physics.noiseScale, range: 0...0.5, format: "%.2f")
-                    ValueSlider(title: "Ruido · tiempo", value: $physics.noiseRate, range: 0...2, format: "%.2f s")
+                    ValueSlider(title: "Noise · scale", value: $physics.noiseScale, range: 0...0.5, format: "%.2f")
+                    ValueSlider(title: "Noise · rate", value: $physics.noiseRate, range: 0...2, format: "%.2f s")
 
                     HStack {
-                        Text("Poses guardadas").font(.callout.weight(.medium))
+                        Text("Saved poses").font(.callout.weight(.medium))
                         Spacer()
-                        Button("Guardar actual", action: onSaveKey).buttonStyle(.link).font(.callout)
+                        Button("Save current", action: onSaveKey).buttonStyle(.link).font(.callout)
                     }
                     .padding(.top, Theme.Space.xs)
                     if keyframes.isEmpty {
-                        Text("Guarda la pose del robot y de los objetos para volver a ella cuando quieras.")
+                        Text("Save the pose of the robot and objects to come back to it anytime.")
                             .font(.caption).foregroundStyle(Theme.muted)
                     }
                     ForEach(keyframes) { key in
@@ -67,58 +67,58 @@ struct SimulationPanel: View {
                     }
                 }
 
-                section("Física") {
-                    ValueSlider(title: "Gravedad", value: $physics.gravity, range: 0...20, format: "%.2f m/s²")
-                    ValueSlider(title: "Fricción", value: $physics.friction, range: 0...1.5, format: "%.2f")
-                    ValueSlider(title: "Rebote", value: $physics.restitution, range: 0...0.9, format: "%.2f")
-                    Row("Paso de tiempo") {
+                section("Physics") {
+                    ValueSlider(title: "Gravity", value: $physics.gravity, range: 0...20, format: "%.2f m/s²")
+                    ValueSlider(title: "Friction", value: $physics.friction, range: 0...1.5, format: "%.2f")
+                    ValueSlider(title: "Bounce", value: $physics.restitution, range: 0...0.9, format: "%.2f")
+                    Row("Timestep") {
                         Picker("", selection: $physics.timestep) {
                             Text("1 ms").tag(1.0 / 1000); Text("2 ms").tag(1.0 / 500); Text("4 ms").tag(1.0 / 250); Text("8 ms").tag(1.0 / 125)
                         }
                         .labelsHidden().fixedSize()
                     }
-                    ValueSlider(title: "Iteraciones", value: $physics.iterations, range: 1...30, format: "%.0f", step: 1)
-                    Switch("Choques del robot consigo mismo", isOn: $physics.selfCollision)
+                    ValueSlider(title: "Iterations", value: $physics.iterations, range: 1...30, format: "%.0f", step: 1)
+                    Switch("Self-collisions", isOn: $physics.selfCollision)
                 }
 
-                section("Visualización") {
-                    Switch("Contactos", isOn: $render.contacts)
-                    Switch("Ejes de las articulaciones", isOn: $render.joints)
-                    Switch("Formas de colisión", isOn: $render.collision)
-                    Switch("Centros de masa", isOn: $render.com)
-                    Switch("Robot transparente", isOn: $render.transparent)
-                    Switch("Cuadrícula", isOn: $render.grid)
-                    Switch("Sombras", isOn: $render.shadows)
+                section("Rendering") {
+                    Switch("Contacts", isOn: $render.contacts)
+                    Switch("Joint axes", isOn: $render.joints)
+                    Switch("Collision shapes", isOn: $render.collision)
+                    Switch("Centers of mass", isOn: $render.com)
+                    Switch("Transparent robot", isOn: $render.transparent)
+                    Switch("Grid", isOn: $render.grid)
+                    Switch("Shadows", isOn: $render.shadows)
                 }
 
                 section("Info") {
-                    Stat("Tiempo", String(format: "%.2f s", state.time))
-                    Stat("Velocidad real", String(format: "%.2f×", state.realTimeFactor))
-                    Stat("Paso de física", String(format: "%.3f ms", state.stepMs))
-                    Stat("Piezas", "\(model?.links.count ?? 0)")
-                    Stat("Articulaciones móviles", "\(model?.joints.count ?? 0)")
-                    Stat("Con motor", "\(model?.actuatedJoints.count ?? 0)")
-                    Stat("Base", model?.floating == true ? "Libre" : "Fija")
-                    Stat("Masa total", String(format: "%.3f kg", model?.mass ?? 0))
-                    Stat("Contactos", "\(state.contacts)")
+                    Stat("Time", String(format: "%.2f s", state.time))
+                    Stat("Real-time factor", String(format: "%.2f×", state.realTimeFactor))
+                    Stat("Physics step", String(format: "%.3f ms", state.stepMs))
+                    Stat("Links", "\(model?.links.count ?? 0)")
+                    Stat("Moving joints", "\(model?.joints.count ?? 0)")
+                    Stat("Actuated", "\(model?.actuatedJoints.count ?? 0)")
+                    Stat("Base", model?.floating == true ? "Free" : "Fixed")
+                    Stat("Total mass", String(format: "%.3f kg", model?.mass ?? 0))
+                    Stat("Contacts", "\(state.contacts)")
                 }
 
-                section("Sensores") {
-                    Text("Fuerza estimada de cada motor").font(.caption).foregroundStyle(Theme.muted)
+                section("Sensors") {
+                    Text("Estimated force per motor").font(.caption).foregroundStyle(Theme.muted)
                     ForEach(state.joints, id: \.name) { j in
                         Stat(j.name, String(format: "%.2f", j.force))
                     }
-                    Text("Fuerza de contacto por pieza").font(.caption).foregroundStyle(Theme.muted).padding(.top, Theme.Space.xs)
-                    if state.linkForces.isEmpty { Text("Sin contactos").font(.callout).foregroundStyle(Theme.faint) }
+                    Text("Contact force per link").font(.caption).foregroundStyle(Theme.muted).padding(.top, Theme.Space.xs)
+                    if state.linkForces.isEmpty { Text("No contacts").font(.callout).foregroundStyle(Theme.faint) }
                     ForEach(state.linkForces.sorted { $0.key < $1.key }, id: \.key) { name, force in
                         Stat(name, String(format: "%.2f N", force))
                     }
                 }
 
-                section("Archivo") {
+                section("File") {
                     HStack(spacing: Theme.Space.s) {
-                        PillButton(title: "Captura de pantalla", action: onScreenshot)
-                        PillButton(title: "Ver el modelo", action: onShowModel)
+                        PillButton(title: "Screenshot", action: onScreenshot)
+                        PillButton(title: "View model", action: onShowModel)
                     }
                 }
             }

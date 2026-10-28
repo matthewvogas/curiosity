@@ -12,8 +12,8 @@ nonisolated enum BusProtocol: String, Codable, CaseIterable, Identifiable, Senda
     var name: String {
         switch self {
         case .feetech: "Feetech STS / SMS"
-        case .dynamixel2: "Dynamixel (protocolo 2.0)"
-        case .dynamixel1: "Dynamixel (protocolo 1.0)"
+        case .dynamixel2: "Dynamixel (protocol 2.0)"
+        case .dynamixel1: "Dynamixel (protocol 1.0)"
         }
     }
 
@@ -52,7 +52,7 @@ nonisolated struct FoundMotor: Identifiable, Equatable, Codable, Sendable {
         case 1030: "XM430-W210"
         case 1120: "XM540-W270"
         case 1090: "XH430-V350"
-        default: "Modelo \(model)"
+        default: "Model \(model)"
         }
     }
 
@@ -91,6 +91,6 @@ struct Device: Identifiable, Codable, Equatable {
         guard !found.isEmpty else { return nil }
         let models = Set(found.map(\.modelName))
         if models == ["STS3215"], found.count == 6 { return "SO-101" }
-        return "\(found.count) motores"
+        return "\(found.count) motors"
     }
 }

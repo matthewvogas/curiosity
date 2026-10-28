@@ -13,15 +13,15 @@ struct WelcomeView: View {
                     .frame(width: 72, height: 72)
                     .foregroundStyle(Theme.ink)
                 Text("Curiosity").font(.largeTitle.weight(.bold))
-                Text("Simula un robot y pídele tareas, o conecta el tuyo.")
+                Text("Simulate a robot and give it tasks, or connect your own.")
                     .font(.body).foregroundStyle(Theme.muted)
             }
             HStack(spacing: Theme.Space.m) {
-                StartCard(icon: .robot, title: "Abrir simulador",
-                          detail: "Elige un robot y háblale: la IA lo mueve en una simulación con física.",
+                StartCard(icon: .robot, title: "Open simulator",
+                          detail: "Pick a robot and talk to it: the AI moves it in a physics simulation.",
                           action: onOpenSimulator)
-                StartCard(icon: .link, title: "Conectar robot externo",
-                          detail: "Tu SO-101 por USB: comprueba que la Mac lo ve y qué motores responden.",
+                StartCard(icon: .link, title: "Connect external robot",
+                          detail: "Your SO-101 over USB: check that your Mac sees it and which motors respond.",
                           action: onConnect)
             }
         }

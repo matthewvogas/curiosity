@@ -16,11 +16,11 @@ struct JointControls: View {
                     HStack {
                         Text("Control").font(.headline)
                         Spacer()
-                        Button("Limpiar", action: onClear).buttonStyle(.link)
-                        Button("Pose inicial", action: onReset).buttonStyle(.link)
+                        Button("Clear", action: onClear).buttonStyle(.link)
+                        Button("Home pose", action: onReset).buttonStyle(.link)
                     }
                     if !joints.contains(where: \.actuated) {
-                        Text("Este robot no tiene articulaciones con motor.").foregroundStyle(Theme.muted)
+                        Text("This robot has no actuated joints.").foregroundStyle(Theme.muted)
                     }
                     ForEach(joints.filter(\.actuated)) { joint in
                         ControlRow(joint: joint, state: states.first { $0.name == joint.name }) { onChange(joint.name, $0) }
@@ -28,8 +28,8 @@ struct JointControls: View {
                 }
 
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
-                    Text("Articulaciones").font(.headline)
-                    Text("Dónde está cada una de verdad, incluidas las que se mueven acopladas a otra o sin motor.")
+                    Text("Joints").font(.headline)
+                    Text("Where each joint actually is, including coupled and unactuated ones.")
                         .font(.caption).foregroundStyle(Theme.muted)
                     ForEach(joints) { joint in
                         JointBar(joint: joint, state: states.first { $0.name == joint.name })

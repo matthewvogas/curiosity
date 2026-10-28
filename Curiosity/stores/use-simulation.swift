@@ -38,7 +38,7 @@ final class UseSimulation {
         error = nil
         objects = []
         activeCamera = nil
-        loadingText = "Abriendo \(robot.name)…"
+        loadingText = "Opening \(robot.name)…"
         engine.load(url: SimulationQueries.modelURL(for: robot), profile: profile)
     }
 
@@ -63,7 +63,7 @@ final class UseSimulation {
         guard let robot = current?.robot, let json = try? await engine.keyframe() else { return }
         keyframes.append(Keyframe(name: "Pose \(keyframes.count + 1)", json: json))
         persistKeyframes(robot)
-        flash("Pose guardada")
+        flash("Pose saved")
     }
 
     func loadKeyframe(_ key: Keyframe) { engine.setKeyframe(json: key.json) }
@@ -78,7 +78,7 @@ final class UseSimulation {
         guard let json = try? await engine.keyframe() else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(json, forType: .string)
-        flash("Estado copiado")
+        flash("State copied")
     }
 
     func screenshot() async {
@@ -87,7 +87,7 @@ final class UseSimulation {
             let png = try await engine.capture(camera: nil, width: 2400, png: true)
             let url = try RobotQueries.saveScreenshot(png, robotName: robot.name)
             NSWorkspace.shared.activateFileViewerSelecting([url])
-            flash("Captura guardada en Imágenes")
+            flash("Screenshot saved to Pictures")
         } catch {
             flash(error.localizedDescription)
         }
@@ -96,18 +96,18 @@ final class UseSimulation {
     /// Resumen del modelo en texto («Print model» de MuJoCo).
     var modelSummary: String {
         guard let m = model else { return "" }
-        var lines = ["Modelo: \(m.name)", "Piezas: \(m.links.count) · Articulaciones móviles: \(m.joints.count) · Masa: \(String(format: "%.3f", m.mass)) kg", ""]
-        lines.append("Piezas")
+        var lines = ["Model: \(m.name)", "Links: \(m.links.count) · Moving joints: \(m.joints.count) · Mass: \(String(format: "%.3f", m.mass)) kg", ""]
+        lines.append("Links")
         lines += m.links.map { "  \($0)" }
         lines.append("")
-        lines.append("Articulaciones (tipo · rango · kp · kd · fuerza máx.)")
+        lines.append("Joints (type · range · kp · kd · max force)")
         for j in m.joints {
             let range = (j.lower != nil && j.upper != nil)
-                ? "\(Units.format(j.lower!, jointType: j.type)) … \(Units.format(j.upper!, jointType: j.type))" : "sin límite"
+                ? "\(Units.format(j.lower!, jointType: j.type)) … \(Units.format(j.upper!, jointType: j.type))" : "unlimited"
             lines.append("  \(j.name) · \(j.type) · \(range) · \(String(format: "%.1f · %.2f · %.1f", j.kp, j.kd, j.fmax))")
         }
-        if !m.cameras.isEmpty { lines += ["", "Cámaras: " + m.cameras.joined(separator: ", ")] }
-        if !m.warnings.isEmpty { lines += ["", "Avisos"] + m.warnings.map { "  \($0)" } }
+        if !m.cameras.isEmpty { lines += ["", "Cameras: " + m.cameras.joined(separator: ", ")] }
+        if !m.warnings.isEmpty { lines += ["", "Warnings"] + m.warnings.map { "  \($0)" } }
         return lines.joined(separator: "\n")
     }
 

@@ -18,25 +18,25 @@ struct RobotSetupView: View {
 
     var body: some View {
         Section {
-            Picker("Calibración del follower", selection: $followerID) {
-                Text("Elige…").tag(String?.none)
+            Picker("Follower calibration", selection: $followerID) {
+                Text("Choose…").tag(String?.none)
                 ForEach(followers, id: \.self) { Text($0).tag(String?.some($0)) }
             }
-            Picker("Puerto del leader", selection: $leaderPort) {
-                Text("Sin leader").tag(String?.none)
+            Picker("Leader port", selection: $leaderPort) {
+                Text("No leader").tag(String?.none)
                 ForEach(otherPorts, id: \.self) { Text($0.replacingOccurrences(of: "/dev/cu.", with: "")).tag(String?.some($0)) }
             }
-            Picker("Calibración del leader", selection: $leaderID) {
-                Text("Elige…").tag(String?.none)
+            Picker("Leader calibration", selection: $leaderID) {
+                Text("Choose…").tag(String?.none)
                 ForEach(leaders, id: \.self) { Text($0).tag(String?.some($0)) }
             }
             .disabled(leaderPort == nil)
             HStack {
-                Picker("Cámara", selection: $cameraIndex) {
-                    Text("Elige…").tag(Int?.none)
+                Picker("Camera", selection: $cameraIndex) {
+                    Text("Choose…").tag(Int?.none)
                     ForEach(cameras) { Text("\($0.name) (\($0.index))").tag(Int?.some($0.index)) }
                 }
-                Button("Ver", action: onSnapshot).disabled(cameraIndex == nil)
+                Button("Preview", action: onSnapshot).disabled(cameraIndex == nil)
             }
             if let snapshot, let image = NSImage(data: snapshot) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
@@ -44,7 +44,7 @@ struct RobotSetupView: View {
             }
             let others = cameras.filter { $0.index != cameraIndex }
             if !others.isEmpty {
-                LabeledContent("Otras cámaras en vivo") {
+                LabeledContent("Other cameras in Live") {
                     VStack(alignment: .trailing, spacing: 4) {
                         ForEach(others) { c in
                             Toggle(c.name, isOn: Binding(
@@ -53,12 +53,12 @@ struct RobotSetupView: View {
                         }
                     }
                 }
-                .help("Se ven junto a la principal en «En vivo» y la IA también mira por ellas (por ejemplo una vista desde arriba).")
+                .help("Shown next to the main camera in Live, and the AI looks through them too (for example, a top-down view).")
             }
         } header: {
-            Text("Brazos y cámara")
+            Text("Arms and camera")
         } footer: {
-            Text("Las calibraciones son las que hiciste con lerobot-calibrate. Si no aparece ninguna, calibra primero en la terminal (ver la guía).")
+            Text("These are the calibrations you made with lerobot-calibrate. If none show up, calibrate in the terminal first (see the guide).")
                 .foregroundStyle(Theme.muted)
         }
     }

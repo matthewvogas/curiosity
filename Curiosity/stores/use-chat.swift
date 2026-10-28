@@ -72,7 +72,7 @@ final class UseChat {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isRunning else { return }
         guard let key = settings.anthropicKey else {
-            error = "Conecta tu API key en Ajustes para hablar con el robot."
+            error = "Add your API key in Settings to talk to the robot."
             return
         }
         guard let system = body.chatSystemPrompt(robotName: robotName) else {
@@ -114,14 +114,14 @@ final class UseChat {
         let ids = content.filter { $0["type"] as? String == "tool_use" }.compactMap { $0["id"] as? String }
         guard !ids.isEmpty else { return }
         history.append(["role": "user", "content": ids.map {
-            ["type": "tool_result", "tool_use_id": $0, "content": "Interrumpido por la persona.", "is_error": true] as [String: Any]
+            ["type": "tool_result", "tool_use_id": $0, "content": "Interrupted by the user.", "is_error": true] as [String: Any]
         }])
     }
 
     /// Guarda la conversación (título = el primer mensaje) y actualiza la lista del historial.
     private func persist() {
         guard !robotID.isEmpty, !items.isEmpty else { return }
-        let first = items.lazy.compactMap { if case .user(let t) = $0.kind { t } else { nil } }.first ?? "Conversación"
+        let first = items.lazy.compactMap { if case .user(let t) = $0.kind { t } else { nil } }.first ?? "Conversation"
         let title = first.count > 60 ? String(first.prefix(57)) + "…" : first
         let data = (try? JSONSerialization.data(withJSONObject: history)) ?? Data("[]".utf8)
         let conversation = Conversation(id: conversationID, robotID: robotID, title: title, items: items, history: data)
@@ -172,16 +172,16 @@ final class UseChat {
                 }
                 history.append(["role": "user", "content": results])
             case "refusal":
-                items.append(ChatItem(kind: .notice("La IA no puede ayudar con esa solicitud.", isError: true)))
+                items.append(ChatItem(kind: .notice("The AI can't help with that request.", isError: true)))
                 return
             case "max_tokens":
-                items.append(ChatItem(kind: .notice("La respuesta se cortó por largo.", isError: false)))
+                items.append(ChatItem(kind: .notice("The reply was cut off for length.", isError: false)))
                 return
             default:
                 return
             }
         }
-        items.append(ChatItem(kind: .notice("Se alcanzó el máximo de pasos seguidos. Pídele que continúe.", isError: false)))
+        items.append(ChatItem(kind: .notice("Reached the maximum number of steps in a row. Ask it to continue.", isError: false)))
     }
 
     /// Corre una herramienta y devuelve su tool_result. Muestra el avance en el chat y, si mueve un robot
@@ -200,7 +200,7 @@ final class UseChat {
                 items[index].kind = .approval(title: title, detail: detail, state: ok ? .approved : .rejected)
             }
             guard ok else {
-                return result(id, text: "La persona no aprobó este movimiento. Pregúntale qué prefiere.", isError: true)
+                return result(id, text: "The user didn't approve this move. Ask them what they'd prefer.", isError: true)
             }
         }
 
@@ -222,7 +222,7 @@ final class UseChat {
                 var content: [[String: Any]] = []
                 for photo in photos {
                     items.append(ChatItem(kind: .image(photo.jpeg)))
-                    if !photo.label.isEmpty { content.append(["type": "text", "text": "Cámara «\(photo.label)»:"]) }
+                    if !photo.label.isEmpty { content.append(["type": "text", "text": "Camera \"\(photo.label)\":"]) }
                     content.append(["type": "image", "source": ["type": "base64", "media_type": "image/jpeg",
                                                                 "data": photo.jpeg.base64EncodedString()]])
                 }

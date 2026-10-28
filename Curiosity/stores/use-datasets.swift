@@ -41,7 +41,7 @@ final class UseDatasets {
         defer { searching = false }
         do {
             hub = try await HubQueries.searchDatasets(query, token: settings.hubToken)
-            message = hub.isEmpty ? "Nada con «\(query)» en el Hub." : nil
+            message = hub.isEmpty ? "Nothing for “\(query)” on the Hub." : nil
         } catch {
             message = error.localizedDescription
         }

@@ -7,14 +7,14 @@ enum RealAgentTools {
 
     static let definitions: [[String: Any]] = [
         tool("get_state",
-             "Lee dónde está cada articulación del robot real, a dónde va y su rango permitido. Úsala antes de planear un movimiento.",
+             "Reads where each joint of the real robot is, where it's heading and its allowed range. Use it before planning a move.",
              properties: [:], required: []),
         tool("move_joints",
-             "Mueve el robot real hacia estos objetivos, despacio (unos 40° por segundo). La persona tiene que aprobar cada movimiento antes de que ocurra. Devuelve el estado al llegar.",
+             "Moves the real robot toward these targets, slowly (about 40° per second). The user has to approve each move before it happens. Returns the state on arrival.",
              properties: [
                 "targets": [
                     "type": "array",
-                    "description": "Objetivos. Grados para las articulaciones; la pinza (gripper) va de 0 a 100.",
+                    "description": "Targets. Degrees for the joints; the gripper goes from 0 to 100.",
                     "items": [
                         "type": "object",
                         "properties": [
@@ -26,9 +26,9 @@ enum RealAgentTools {
                     ],
                 ],
              ], required: ["targets"]),
-        tool("look", "Toma una foto con cada cámara del robot (la principal y las demás, si hay) para ver la mesa, el brazo y los objetos.",
+        tool("look", "Takes a picture with each robot camera (the main one and any others) to see the table, the arm and the objects.",
              properties: [:], required: []),
-        tool("go_home", "Vuelve despacio a la pose en que estaba el robot al conectarlo. También requiere aprobación.",
+        tool("go_home", "Slowly returns to the pose the robot was in when it was connected. Also requires approval.",
              properties: [:], required: []),
     ]
 
@@ -38,38 +38,38 @@ enum RealAgentTools {
     }
 
     static let lookReferences: [String: Any] = tool(
-        "look_references", "Muestra las fotos de los momentos clave de las demostraciones que estudiaste, para comparar con lo que ves.",
+        "look_references", "Shows the key-moment pictures from the demonstrations you studied, to compare with what you see.",
         properties: [:], required: [])
 
     static func systemPrompt(robotName: String, limits: [String: ClosedRange<Double>]) -> String {
         let ranges = joints.compactMap { j in
-            limits[j].map { "- \(j): de \(format($0.lowerBound, j)) a \(format($0.upperBound, j)) (recorrido total \(format($0.upperBound - $0.lowerBound, j)))" }
+            limits[j].map { "- \(j): \(format($0.lowerBound, j)) to \(format($0.upperBound, j)) (full travel \(format($0.upperBound - $0.lowerBound, j)))" }
         }.joined(separator: "\n")
         return """
-        Eres el asistente de Curiosity y controlas un brazo robótico REAL, un SO-101 llamado \(robotName), \
-        sobre una mesa. Tiene una cámara que mira la escena. La persona te pide cosas en lenguaje natural y \
-        tú las conviertes en movimientos. Si hay más de una cámara (por ejemplo una vista desde arriba), \
-        «look» te da una foto de cada una con su nombre: combínalas para ubicar las cosas.
+        You are the assistant in Curiosity and you control a REAL robotic arm, an SO-101 named \(robotName), \
+        on a table. It has a camera looking at the scene. The user asks you for things in natural language and \
+        you turn them into movements. If there's more than one camera (for example a top-down view), \
+        "look" gives you one picture from each, with its name: combine them to locate things.
 
-        Articulaciones (grados; la pinza de 0 a 100) y su rango permitido. Sale de la calibración de este \
-        robot (lo máximo que se movió cada motor al calibrarlo, con 3° de margen), así que es su libertad real; \
-        el 0° de cada una es el centro de ese recorrido:
+        Joints (degrees; the gripper from 0 to 100) and their allowed range. It comes from this robot's \
+        calibration (the furthest each motor moved during calibration, with a 3° margin), so it's its real freedom; \
+        each joint's 0° is the center of that travel:
         \(ranges)
 
-        Reglas, porque es un robot de verdad:
-        - Cada movimiento lo aprueba la persona antes de que ocurra: explica en una frase qué vas a hacer y por qué.
-        - Mueve en pasos chicos (pocas articulaciones y pocos grados a la vez) y mira (look) para comprobar.
-        - Antes del primer movimiento, lee el estado (get_state) y mira la escena.
-        - El estado trae dónde está la pinza (gripper_cm) y la muñeca (wrist_cm) en centímetros, en el marco \
-        de la base del robot (z hacia arriba), calculado con su modelo 3D. Cada movimiento te devuelve el \
-        antes, el después, cuánto cambió cada articulación, si llegó y cuánto se desplazó la pinza; también \
-        los movimientos anteriores. Úsalo para aprender en qué sentido mueve cada articulación y corregir.
-        - Al mirar, además de las cámaras recibes una imagen del modelo 3D en la pose actual del robot.
-        - Nunca intentes salirte del rango: el estado te dice cuánto le queda hacia cada lado (room_to_min, \
-        room_to_max) y en qué parte del recorrido está (percent_of_range). Si algo parece raro o peligroso, \
-        detente y pregunta.
-        - No sabes de antemano en qué sentido abre la pinza: pruébalo con un cambio chico y mira.
-        - Responde en el idioma de la persona, breve y sin tecnicismos innecesarios.
+        Rules, because this is a real robot:
+        - The user approves each move before it happens: explain in one sentence what you're going to do and why.
+        - Move in small steps (few joints and few degrees at a time) and look (look) to check.
+        - Before the first move, read the state (get_state) and look at the scene.
+        - The state includes where the gripper (gripper_cm) and the wrist (wrist_cm) are, in centimeters, in the \
+        robot base frame (z up), computed with its 3D model. Each move returns the before, the after, \
+        how much each joint changed, whether it got there and how far the gripper moved; also \
+        the previous moves. Use this to learn which way each joint moves and to correct.
+        - When you look, besides the cameras you get an image of the 3D model in the robot's current pose.
+        - Never try to go outside the range: the state tells you how much room is left on each side (room_to_min, \
+        room_to_max) and where in its travel it is (percent_of_range). If something seems odd or dangerous, \
+        stop and ask.
+        - You don't know in advance which way the gripper opens: try a small change and look.
+        - Reply in the user's language, briefly and without unnecessary jargon.
         """
     }
 
@@ -117,17 +117,17 @@ enum RealAgentTools {
                 guard let j = t["joint"] as? String, let v = (t["value"] as? NSNumber)?.doubleValue else { return nil }
                 return "\(j): \(format(current[j] ?? 0, j)) → \(format(v, j))"
             }.joined(separator: "\n")
-        case "go_home": return "Todas las articulaciones a la pose del principio."
+        case "go_home": return "All joints to the starting pose."
         default: return nil
         }
     }
 
     static func title(for name: String) -> String {
         switch name {
-        case "get_state": "Leyendo el estado"
-        case "move_joints": "Mover el robot"
-        case "look": "Mirando con la cámara"
-        case "go_home": "Volver a la pose del principio"
+        case "get_state": "Reading the state"
+        case "move_joints": "Move the robot"
+        case "look": "Looking through the camera"
+        case "go_home": "Return to the starting pose"
         default: name
         }
     }

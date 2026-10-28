@@ -25,13 +25,13 @@ nonisolated final class SerialPort: @unchecked Sendable {
         fd = Darwin.open(path, O_RDWR | O_NOCTTY | O_NONBLOCK)
         guard fd >= 0 else {
             let busy = errno == EBUSY
-            throw SerialError(message: busy ? "El puerto está en uso por otro programa (¿LeRobot o el panel?)."
-                                            : "No se pudo abrir \(path): \(String(cString: strerror(errno))).")
+            throw SerialError(message: busy ? "The port is being used by another app (LeRobot or the panel?)."
+                                            : "Couldn't open \(path): \(String(cString: strerror(errno))).")
         }
         // Exclusivo: que ningún otro programa mande órdenes al mismo tiempo.
         if ioctl(fd, TIOCEXCL) == -1 {
             close()
-            throw SerialError(message: "El puerto está en uso por otro programa.")
+            throw SerialError(message: "The port is being used by another app.")
         }
         var options = termios()
         tcgetattr(fd, &options)
@@ -44,7 +44,7 @@ nonisolated final class SerialPort: @unchecked Sendable {
         let IOSSIOSPEED: UInt = 0x8008_5402
         if ioctl(fd, IOSSIOSPEED, &speed) == -1 {
             close()
-            throw SerialError(message: "No se pudo poner el puerto a \(baud) baudios.")
+            throw SerialError(message: "Couldn't set the port to \(baud) baud.")
         }
         tcflush(fd, TCIOFLUSH)
     }
@@ -64,7 +64,7 @@ nonisolated final class SerialPort: @unchecked Sendable {
             let n = bytes[offset...].withUnsafeBytes { Darwin.write(fd, $0.baseAddress, $0.count) }
             if n < 0 {
                 if errno == EAGAIN { usleep(200); continue }
-                throw SerialError(message: "Se perdió la conexión con el puerto.")
+                throw SerialError(message: "Lost the connection to the port.")
             }
             offset += n
         }

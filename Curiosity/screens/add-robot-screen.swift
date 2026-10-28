@@ -12,8 +12,8 @@ struct AddRobotScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                Text("Abrir simulador").font(.title2.weight(.semibold))
-                Text("Cualquier robot en URDF o MJCF: brazos, pinzas, manos, cuadrúpedos, humanoides.")
+                Text("Open simulator").font(.title2.weight(.semibold))
+                Text("Any URDF or MJCF robot: arms, grippers, hands, quadrupeds, humanoids.")
                     .font(.callout).foregroundStyle(Theme.muted)
             }
 
@@ -25,12 +25,12 @@ struct AddRobotScreen: View {
                     }
                 }
                 Divider().padding(.vertical, Theme.Space.xs)
-                OptionCard(icon: .globe, title: "Biblioteca de robots",
-                           detail: "\(library.catalog?.robots.count ?? 0) robots de MuJoCo Menagerie, listos con un clic.") {
+                OptionCard(icon: .globe, title: "Robot library",
+                           detail: "\(library.catalog?.robots.count ?? 0) robots from MuJoCo Menagerie, one click away.") {
                     browsing = true
                 }
-                OptionCard(icon: .file, title: "Importar un archivo",
-                           detail: "Un URDF (.urdf) o un MJCF (.xml); sus mallas STL, OBJ o DAE se leen desde su carpeta.") {
+                OptionCard(icon: .file, title: "Import a file",
+                           detail: "A URDF (.urdf) or MJCF (.xml) file; STL, OBJ or DAE meshes are read from its folder.") {
                     importing = true
                 }
             }
@@ -41,7 +41,7 @@ struct AddRobotScreen: View {
 
             HStack {
                 Spacer()
-                Button("Cerrar") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
             }
         }
         .padding(Theme.Space.xxl)

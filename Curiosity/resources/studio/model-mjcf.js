@@ -30,7 +30,7 @@ async function expandIncludes(doc, base, depth = 0) {
   for (const inc of [...doc.querySelectorAll("include")]) {
     const url = resolve(base, "", inc.getAttribute("file"));
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`No encuentro el archivo incluido ${inc.getAttribute("file")}`);
+    if (!res.ok) throw new Error(`Can't find the included file ${inc.getAttribute("file")}`);
     const sub = new DOMParser().parseFromString(await res.text(), "application/xml");
     await expandIncludes(sub, base, depth + 1);
     const root = sub.documentElement;
@@ -42,10 +42,10 @@ async function expandIncludes(doc, base, depth = 0) {
 export async function parseMJCF(text, url) {
   const base = url.slice(0, url.lastIndexOf("/"));
   const doc = new DOMParser().parseFromString(text, "application/xml");
-  if (doc.querySelector("parsererror")) throw new Error("El archivo MJCF no es un XML válido.");
+  if (doc.querySelector("parsererror")) throw new Error("The MJCF file isn't valid XML.");
   await expandIncludes(doc, base);
   const root = doc.querySelector("mujoco");
-  if (!root) throw new Error("El archivo no tiene <mujoco>: ¿es un MJCF?");
+  if (!root) throw new Error("The file has no <mujoco>: is it an MJCF?");
   const warnings = [];
   const warn = (w) => { if (!warnings.includes(w)) warnings.push(w); };
 
@@ -111,7 +111,7 @@ export async function parseMJCF(text, url) {
   const meshes = {}, materials = {};
   for (const m of root.querySelectorAll(":scope > asset > mesh")) {
     const file = m.getAttribute("file");
-    if (!file) { warn(`malla «${m.getAttribute("name")}» sin archivo (definida por vértices): pendiente`); continue; }
+    if (!file) { warn(`mesh "${m.getAttribute("name")}" has no file (defined by vertices): not supported yet`); continue; }
     const name = m.getAttribute("name") || file.split("/").pop().replace(/\.[^.]+$/, "");
     meshes[name] = { url: resolve(base, meshdir, file), scale: nums(get(m, "scale"), [1, 1, 1]) };
   }
@@ -141,11 +141,11 @@ export async function parseMJCF(text, url) {
       case "ellipsoid": geometry = { type: "ellipsoid", radii: [size[0], size[1] ?? size[0], size[2] ?? size[0]] }; break;
       case "mesh": {
         const m = meshes[get(el, "mesh", cls)];
-        if (!m) { warn(`geom con malla desconocida «${get(el, "mesh", cls)}»`); return null; }
+        if (!m) { warn(`geom with unknown mesh "${get(el, "mesh", cls)}"`); return null; }
         geometry = { type: "mesh", url: m.url, scale: m.scale };
         break;
       }
-      default: warn(`geom de tipo «${type}» pendiente`); return null;
+      default: warn(`geom type "${type}" not supported yet`); return null;
     }
     const rgba = nums(get(el, "rgba", cls)) || materials[get(el, "material", cls)] || null;
     const contype = +(get(el, "contype", cls) ?? 1), conaffinity = +(get(el, "conaffinity", cls) ?? 1);
@@ -225,7 +225,7 @@ export async function parseMJCF(text, url) {
     }
     for (const c of bodyEl.querySelectorAll(":scope > camera")) {
       const q = orient(c, childcls);
-      cameras.push({ name: c.getAttribute("name") || `${name} cámara`, link: name, pos: nums(get(c, "pos", childcls), [0, 0, 0]),
+      cameras.push({ name: c.getAttribute("name") || `${name} camera`, link: name, pos: nums(get(c, "pos", childcls), [0, 0, 0]),
         quat: qa(q), fovy: +(get(c, "fovy", childcls) || 45), width: 640, height: 480 });
     }
     links.push(link);
@@ -233,7 +233,7 @@ export async function parseMJCF(text, url) {
   }
 
   const worldbody = root.querySelector(":scope > worldbody");
-  if (!worldbody) throw new Error("El MJCF no tiene <worldbody>.");
+  if (!worldbody) throw new Error("The MJCF has no <worldbody>.");
   addGeoms(worldbody, world, null);
   for (const b of worldbody.querySelectorAll(":scope > body")) walk(b, "world", null);
   const byName = new Map(joints.map((j) => [j.name, j]));
@@ -243,7 +243,7 @@ export async function parseMJCF(text, url) {
   for (const t of root.querySelectorAll(":scope > tendon > fixed")) {
     tendons.set(t.getAttribute("name"), [...t.querySelectorAll(":scope > joint")].map((j) => ({ joint: j.getAttribute("joint"), coef: +(j.getAttribute("coef") || 1) })));
   }
-  if (root.querySelector(":scope > tendon > spatial")) warn("tendones espaciales: pendiente");
+  if (root.querySelector(":scope > tendon > spatial")) warn("spatial tendons: not supported yet");
 
   // ---------- actuadores ----------
   for (const a of root.querySelectorAll(":scope > actuator > *")) {
@@ -261,7 +261,7 @@ export async function parseMJCF(text, url) {
       }
     }
     const j = byName.get(target);
-    if (!j) { warn(`actuador «${a.getAttribute("name") || tag}» sobre algo que no es una articulación: pendiente`); continue; }
+    if (!j) { warn(`actuator "${a.getAttribute("name") || tag}" targets something that isn't a joint: not supported yet`); continue; }
     const ctrl = nums(get(a, "ctrlrange", cls)), force = nums(get(a, "forcerange", cls));
     const gear = nums(get(a, "gear", cls), [1])[0];
     const span = j.lower != null ? j.upper - j.lower : Math.PI;
@@ -281,7 +281,7 @@ export async function parseMJCF(text, url) {
       kp = fmax * 10;
       kd = kp * 0.05;
     } else {
-      warn(`actuador de tipo «${tag}»: se aproxima con un servo de posición`);
+      warn(`actuator type "${tag}": approximated with a position servo`);
       kp = 10; kd = 0.5; fmax = 10;
     }
     j.actuated = !j.mimic;
@@ -307,7 +307,7 @@ export async function parseMJCF(text, url) {
         j1.actuated = false;
       }
     } else {
-      warn(`restricción <${e.tagName}>: pendiente (algunas piezas pueden quedar sueltas)`);
+      warn(`constraint <${e.tagName}>: not supported yet (some links may come loose)`);
     }
   }
 
@@ -325,6 +325,6 @@ export async function parseMJCF(text, url) {
     }
   }
 
-  if (root.querySelector(":scope > actuator > muscle")) warn("músculos: pendiente");
+  if (root.querySelector(":scope > actuator > muscle")) warn("muscles: not supported yet");
   return { name: root.getAttribute("model") || "robot", links, joints, cameras, home, warnings };
 }

@@ -17,12 +17,12 @@ struct HardwareTestView: View {
     var body: some View {
         Group {
             Section {
-                TextField("Nombre", text: $name, prompt: Text(placeholder))
-                LabeledContent("Puerto", value: port.replacingOccurrences(of: "/dev/", with: ""))
-                LabeledContent("Robot", value: "SO-101 · motores Feetech STS3215")
-                LabeledContent("Otros robots") { Text("Próximamente").foregroundStyle(Theme.faint) }
+                TextField("Name", text: $name, prompt: Text(placeholder))
+                LabeledContent("Port", value: port.replacingOccurrences(of: "/dev/", with: ""))
+                LabeledContent("Robot", value: "SO-101 · Feetech STS3215 motors")
+                LabeledContent("Other robots") { Text("Coming soon").foregroundStyle(Theme.faint) }
             } footer: {
-                Text("«Probar» abre el puerto, busca qué motores responden y lo cierra: solo lee, no mueve nada. Si LeRobot está usando este puerto, ciérralo primero.")
+                Text("“Test” opens the port, checks which motors respond and closes it again. It only reads and doesn’t move anything. If LeRobot is using this port, close it first.")
                     .foregroundStyle(Theme.muted)
             }
             .disabled(testing)
@@ -31,25 +31,25 @@ struct HardwareTestView: View {
                 HStack {
                     if testing {
                         ProgressView(value: progress).frame(width: 140)
-                        Text("Buscando motores…").foregroundStyle(Theme.muted)
+                        Text("Looking for motors…").foregroundStyle(Theme.muted)
                     } else if let result {
                         Circle().fill(resultIsError ? Theme.red : found.isEmpty ? Theme.yellow : Theme.green).frame(width: 8, height: 8)
                         Text(result).foregroundStyle(resultIsError ? Theme.red : Theme.ink)
                     } else if !connected {
                         Circle().fill(Theme.faint).frame(width: 8, height: 8)
-                        Text("Desenchufado: conéctalo por USB para probarlo").foregroundStyle(Theme.muted)
+                        Text("Unplugged: connect it over USB to test it").foregroundStyle(Theme.muted)
                     } else {
-                        Text("Sin probar").foregroundStyle(Theme.muted)
+                        Text("Not tested").foregroundStyle(Theme.muted)
                     }
                     Spacer()
-                    Button("Probar", action: onTest).buttonStyle(.borderedProminent).disabled(testing || !connected)
+                    Button("Test", action: onTest).buttonStyle(.borderedProminent).disabled(testing || !connected)
                 }
                 ForEach(found) { m in
                     HStack {
                         Text("ID \(m.id)").monospacedDigit().frame(width: 60, alignment: .leading)
                         Text(m.modelName).foregroundStyle(Theme.muted)
                         Spacer()
-                        Text(m.position.map { "posición \($0)" } ?? "").monospacedDigit().foregroundStyle(Theme.muted)
+                        Text(m.position.map { "position \($0)" } ?? "").monospacedDigit().foregroundStyle(Theme.muted)
                     }
                 }
             }

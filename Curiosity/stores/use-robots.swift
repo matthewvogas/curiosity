@@ -30,7 +30,7 @@ final class UseRobots {
             added.addedAt = .now
             mine.append(added)
             do { try RobotQueries.saveImported(mine) } catch {
-                self.error = "No se pudo guardar la lista: \(error.localizedDescription)"
+                self.error = "Couldn't save the list: \(error.localizedDescription)"
                 return
             }
             load()
@@ -42,7 +42,7 @@ final class UseRobots {
     func importModel(at url: URL) {
         error = nil
         guard let name = RobotQueries.modelName(at: url) else {
-            error = "Ese archivo no parece un URDF ni un MJCF."
+            error = "That file doesn't look like a URDF or MJCF."
             return
         }
         let profile = RobotQueries.readProfile(urdfURL: url)
@@ -60,7 +60,7 @@ final class UseRobots {
             load()
             selectedID = robot.id
         } catch {
-            self.error = "No se pudo guardar la biblioteca: \(error.localizedDescription)"
+            self.error = "Couldn't save the library: \(error.localizedDescription)"
         }
     }
 
@@ -71,7 +71,7 @@ final class UseRobots {
             imported.append(Robot(id: id, name: name, summary: category, source: .library, urdfPath: modelURL.path,
                                   license: "MuJoCo Menagerie", addedAt: .now))
             do { try RobotQueries.saveImported(imported) } catch {
-                self.error = "No se pudo guardar la biblioteca: \(error.localizedDescription)"
+                self.error = "Couldn't save the library: \(error.localizedDescription)"
                 return
             }
             load()

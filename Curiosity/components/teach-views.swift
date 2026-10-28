@@ -9,7 +9,7 @@ struct TaskEmptyState: View {
     @State private var title = ""
     @FocusState private var focused: Bool
 
-    private static let examples = ["Pon el cubo rojo dentro del vaso", "Apila los dos bloques", "Empuja la pelota a la izquierda"]
+    private static let examples = ["Put the red cube in the cup", "Stack the two blocks", "Push the ball to the left"]
 
     var body: some View {
         VStack(spacing: Theme.Space.xl) {
@@ -18,13 +18,13 @@ struct TaskEmptyState: View {
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(Theme.muted)
                     .padding(.bottom, Theme.Space.xs)
-                Text("¿Qué quieres que aprenda?").font(.title.weight(.semibold))
-                Text("Se la muestras unas veces con el leader, se entrena y luego la hace solo.")
+                Text("What do you want it to learn?").font(.title.weight(.semibold))
+                Text("Show it a few times with the leader, train it, and then it does it on its own.")
                     .font(.body).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
             }
 
             HStack(spacing: Theme.Space.s) {
-                TextField("Describe la tarea", text: $title, prompt: Text("Describe la tarea en una frase"))
+                TextField("Describe the task", text: $title, prompt: Text("Describe the task in one sentence"))
                     .textFieldStyle(.plain)
                     .font(.title3)
                     .focused($focused)
@@ -35,7 +35,7 @@ struct TaskEmptyState: View {
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.circle)
                 .disabled(isEmpty)
-                .help("Empezar (↩)")
+                .help("Start (↩)")
             }
             .padding(.leading, Theme.Space.l)
             .padding(.trailing, Theme.Space.s)
@@ -58,13 +58,13 @@ struct TaskEmptyState: View {
         .padding(Theme.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .safeAreaInset(edge: .bottom) {
-            Label("Funciona mejor con tareas cortas, siempre iguales y a la vista de la cámara.", systemImage: "lightbulb")
+            Label("Works best with short tasks that are always the same and in view of the camera.", systemImage: "lightbulb")
                 .font(.caption).foregroundStyle(Theme.faint)
                 .padding(.bottom, Theme.Space.xl)
         }
         .overlay(alignment: .topTrailing) {
             if let onCancel {
-                Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction).padding(Theme.Space.l)
+                Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction).padding(Theme.Space.l)
             }
         }
         .onAppear { focused = true }
@@ -98,13 +98,13 @@ struct RecordingView: View {
                 }
             }
             HStack(spacing: Theme.Space.m) {
-                Button("Repetir", action: onRedo).keyboardShortcut(.leftArrow, modifiers: [])
-                    .disabled(session.phase != "recording").help("Descarta esta demostración y empieza otra vez (←)")
-                Button(session.phase == "reset" ? "Listo, siguiente" : "Terminé esta demo", action: onNext)
+                Button("Redo", action: onRedo).keyboardShortcut(.leftArrow, modifiers: [])
+                    .disabled(session.phase != "recording").help("Discards this demonstration and starts again (←)")
+                Button(session.phase == "reset" ? "Ready, next" : "Done with this one", action: onNext)
                     .buttonStyle(.borderedProminent).keyboardShortcut(.rightArrow, modifiers: [])
                     .disabled(!(session.phase == "recording" || session.phase == "reset")).help("→")
-                Button("Detener y guardar", role: .destructive, action: onStop).keyboardShortcut(.escape, modifiers: [])
-                    .help("Guarda las demostraciones terminadas; puedes seguir después (Esc)")
+                Button("Stop and save", role: .destructive, action: onStop).keyboardShortcut(.escape, modifiers: [])
+                    .help("Saves the finished demonstrations; you can continue later (Esc)")
             }
             .controlSize(.large)
         }
@@ -114,19 +114,19 @@ struct RecordingView: View {
 
     private var title: String {
         switch session.phase {
-        case "starting": "Conectando los brazos y la cámara…"
-        case "recording": "Demostración \(session.episode + 1) de \(session.target)"
-        case "reset": "Prepara la siguiente"
-        case "saving": "Guardando…"
+        case "starting": "Connecting the arms and camera…"
+        case "recording": "Demonstration \(session.episode + 1) of \(session.target)"
+        case "reset": "Get ready for the next one"
+        case "saving": "Saving…"
         default: ""
         }
     }
 
     private var hint: String {
         switch session.phase {
-        case "recording": "Haz la tarea con el leader, de principio a fin."
-        case "reset": "No se graba. Deja los objetos como al empezar, cambiándolos un poco de lugar."
-        case "starting": "El follower va a copiar al leader."
+        case "recording": "Do the task with the leader, from start to finish."
+        case "reset": "Not recording. Put the objects back as they were at the start, moving them around a little."
+        case "starting": "The follower will copy the leader."
         default: ""
         }
     }
@@ -141,10 +141,10 @@ struct RunningView: View {
     var body: some View {
         VStack(spacing: Theme.Space.l) {
             LivePicture(frame: frame).frame(maxHeight: 420)
-            Text(session.phase == "running" ? "El robot está haciendo la tarea · \(Units.clock(session.elapsed)) de \(Units.clock(session.limit))"
-                 : session.phase == "returning" ? "Volviendo a la pose inicial…" : "Cargando el modelo y conectando…")
+            Text(session.phase == "running" ? "The robot is doing the task · \(Units.clock(session.elapsed)) of \(Units.clock(session.limit))"
+                 : session.phase == "returning" ? "Returning to the home pose…" : "Loading the model and connecting…")
                 .font(.title3).monospacedDigit()
-            Button("Detener robot", role: .destructive, action: onStop)
+            Button("Stop robot", role: .destructive, action: onStop)
                 .buttonStyle(.borderedProminent).tint(Theme.red).controlSize(.large)
                 .keyboardShortcut(.escape, modifiers: []).help("Esc")
         }
@@ -161,30 +161,30 @@ struct HubPickerView: View {
     let onSearch: () -> Void
     let onPick: (HubDataset) -> Void
     let onClose: () -> Void
-    var detail = "Demostraciones que otros grabaron con un SO-101. Entrenas con ellas en lugar de grabar las tuyas; se bajan solas."
+    var detail = "Demonstrations others recorded with an SO-101. Train with them instead of recording your own; they download automatically."
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
-            Text("Datos de Hugging Face").font(.title2.weight(.semibold))
+            Text("Data from Hugging Face").font(.title2.weight(.semibold))
             Text(detail)
                 .font(.callout).foregroundStyle(Theme.muted)
             HStack {
-                TextField("Buscar", text: $query).textFieldStyle(.roundedBorder).onSubmit(onSearch)
-                Button(searching ? "Buscando…" : "Buscar", action: onSearch).disabled(searching)
+                TextField("Search", text: $query).textFieldStyle(.roundedBorder).onSubmit(onSearch)
+                Button(searching ? "Searching…" : "Search", action: onSearch).disabled(searching)
             }
             List(results) { d in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(d.id).lineLimit(1)
-                        Text("\(d.downloads.formatted()) descargas").font(.caption).foregroundStyle(Theme.muted)
+                        Text("\(d.downloads.formatted()) downloads").font(.caption).foregroundStyle(Theme.muted)
                     }
                     Spacer()
-                    Link(destination: d.url) { Image(systemName: "arrow.up.right.square") }.help("Ver en Hugging Face")
-                    Button("Usar") { onPick(d) }
+                    Link(destination: d.url) { Image(systemName: "arrow.up.right.square") }.help("View on Hugging Face")
+                    Button("Use") { onPick(d) }
                 }
             }
             .frame(minHeight: 280)
-            HStack { Spacer(); Button("Cerrar", action: onClose).keyboardShortcut(.cancelAction) }
+            HStack { Spacer(); Button("Close", action: onClose).keyboardShortcut(.cancelAction) }
         }
         .padding(Theme.Space.xl)
         .frame(width: 560, height: 520)

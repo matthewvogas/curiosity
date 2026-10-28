@@ -83,9 +83,9 @@ struct PreflightCheck: Identifiable, Equatable {
         case "follower": "Follower"
         case "leader": "Leader"
         case "pose": "Poses"
-        case "camera": "Cámara"
-        case "permission": "Permiso de cámara"
-        case let k where k.hasPrefix("cam"): "Cámara \(Int(k.dropFirst(3)).map { $0 + 1 } ?? 2)"
+        case "camera": "Camera"
+        case "permission": "Camera permission"
+        case let k where k.hasPrefix("cam"): "Camera \(Int(k.dropFirst(3)).map { $0 + 1 } ?? 2)"
         default: key
         }
     }
@@ -147,8 +147,8 @@ struct PolicyOption: Identifiable, Hashable {
     let needsSmolVLA: Bool
 
     static let all: [PolicyOption] = [
-        PolicyOption(id: "act", name: "ACT", detail: "Rápido y fiable con 50 demostraciones. El recomendado para empezar.", basePath: nil, needsSmolVLA: false),
-        PolicyOption(id: "diffusion", name: "Diffusion", detail: "Movimientos más suaves; tarda más en entrenar.", basePath: nil, needsSmolVLA: false),
-        PolicyOption(id: "smolvla", name: "SmolVLA", detail: "Entiende la tarea en palabras. Parte de lerobot/smolvla_base; lento en Mac.", basePath: "lerobot/smolvla_base", needsSmolVLA: true),
+        PolicyOption(id: "act", name: "ACT", detail: "Fast and reliable with 50 demonstrations. Recommended to start.", basePath: nil, needsSmolVLA: false),
+        PolicyOption(id: "diffusion", name: "Diffusion", detail: "Smoother movements; takes longer to train.", basePath: nil, needsSmolVLA: false),
+        PolicyOption(id: "smolvla", name: "SmolVLA", detail: "Understands the task in words. Starts from lerobot/smolvla_base; slow on Mac.", basePath: "lerobot/smolvla_base", needsSmolVLA: true),
     ]
 }

@@ -13,17 +13,17 @@ struct LibraryScreen: View {
             VStack(alignment: .leading, spacing: Theme.Space.m) {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Biblioteca de robots").font(.title2.weight(.semibold))
-                        Text("\(library.catalog?.robots.count ?? 0) robots de MuJoCo Menagerie. Se descargan una vez y quedan en tu Mac.")
+                        Text("Robot library").font(.title2.weight(.semibold))
+                        Text("\(library.catalog?.robots.count ?? 0) robots from MuJoCo Menagerie. Downloaded once and kept on your Mac.")
                             .font(.callout).foregroundStyle(Theme.muted)
                     }
                     Spacer()
-                    Button("Listo") { dismiss() }.keyboardShortcut(.cancelAction)
+                    Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
                 HStack(spacing: Theme.Space.s) {
-                    TextField("Buscar", text: $library.search).textFieldStyle(.roundedBorder).frame(width: 200)
-                    Picker("Tipo", selection: $library.category) {
-                        Text("Todos").tag(String?.none)
+                    TextField("Search", text: $library.search).textFieldStyle(.roundedBorder).frame(width: 200)
+                    Picker("Type", selection: $library.category) {
+                        Text("All").tag(String?.none)
                         ForEach(library.categories, id: \.self) { Text($0).tag(String?.some($0)) }
                     }
                     .labelsHidden()

@@ -37,20 +37,20 @@ struct DeviceLiveScreen: View {
             if live.isLive {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Section("Cámaras en vivo") {
+                        Section("Live cameras") {
                             ForEach(lerobot.cameras) { c in
                                 if c.index == lerobot.mainCamera(device) {
-                                    Text("\(c.name) · principal")
+                                    Text("\(c.name) · main")
                                 } else {
                                     Toggle(c.name, isOn: extraBinding(c.name))
                                 }
                             }
                         }
-                        Text("¿No aparece? Conéctala por USB en modo webcam.")
+                        Text("Not showing up? Connect it over USB in webcam mode.")
                     } label: {
-                        Label("Cámaras", systemImage: "video.badge.plus")
+                        Label("Cameras", systemImage: "video.badge.plus")
                     }
-                    .help("Agregar o quitar cámaras sin desconectar el robot")
+                    .help("Add or remove cameras without disconnecting the robot")
                 }
             }
         }
@@ -68,7 +68,7 @@ struct DeviceLiveScreen: View {
                           onSearch: { Task { await datasets.search() } },
                           onPick: { d in showingHub = false; study(d.id, root: nil) },
                           onClose: { showingHub = false },
-                          detail: "Demostraciones de un SO-100/101. La IA estudia unas cuantas (se bajan solo esas) y escribe cómo se hace la tarea.")
+                          detail: "Demonstrations from an SO-100/101. The AI studies a few (only those are downloaded) and writes down how the task is done.")
         }
         .task(id: device.id) {
             let key = "device-" + device.id
@@ -89,12 +89,12 @@ struct DeviceLiveScreen: View {
                     }
                 }
             }
-            Tile(title: "Modelo 3D", focused: focused == cams.count, onTap: { focused = cams.count }) {
+            Tile(title: "3D model", focused: focused == cams.count, onTap: { focused = cams.count }) {
                 SimStage(engine: live.twin)
             }
         }
         .overlay(alignment: .bottomLeading) {
-            Label(live.isReturning ? "Volviendo a su pose…" : live.isReady ? "En vivo" : "Conectando…",
+            Label(live.isReturning ? "Returning to its pose…" : live.isReady ? "Live" : "Connecting…",
                   systemImage: live.isReady ? "circle.fill" : "circle.dotted")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(live.isReady ? Theme.ink : Theme.muted)
@@ -109,15 +109,15 @@ struct DeviceLiveScreen: View {
         VStack(spacing: Theme.Space.l) {
             Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 40, weight: .light)).foregroundStyle(Theme.muted)
             VStack(spacing: Theme.Space.s) {
-                Text("Contrólalo en vivo").font(.title.weight(.semibold))
-                Text("Háblale o muévelo con los controles, mirando por su cámara.\nAl conectar se queda firme en su pose; al soltarlo vuelve a ella y se relaja.")
+                Text("Control it live").font(.title.weight(.semibold))
+                Text("Talk to it or move it with the controls while watching through its camera.\nWhen connected it holds its pose; when released it returns to it and relaxes.")
                     .multilineTextAlignment(.center).foregroundStyle(Theme.muted)
             }
-            Button("Conectar", action: onConnect)
+            Button("Connect", action: onConnect)
                 .buttonStyle(.glassProminent).controlSize(.large)
                 .disabled(!device.canRunPolicy || lerobot.isBusy)
             if !device.canRunPolicy {
-                Text("Elige la calibración del follower y la cámara en Ajustes del robot.").font(.callout).foregroundStyle(Theme.muted)
+                Text("Choose the follower calibration and the camera in Robot settings.").font(.callout).foregroundStyle(Theme.muted)
             }
             cameraPicker
             if let error = lerobot.error {
@@ -145,15 +145,15 @@ struct DeviceLiveScreen: View {
     /// Qué cámaras se ven en vivo: la principal (la de grabar) y las que actives.
     private var cameraPicker: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
-            Text("Cámaras").font(.headline)
+            Text("Cameras").font(.headline)
             ForEach(lerobot.cameras) { c in
                 if c.index == lerobot.mainCamera(device) {
-                    Label("\(c.name) · principal", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.muted)
+                    Label("\(c.name) · main", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.muted)
                 } else {
                     Toggle(c.name, isOn: extraBinding(c.name))
                 }
             }
-            Text("¿No aparece una? Conéctala por USB en modo webcam; sale aquí sola.")
+            Text("Camera not showing up? Connect it over USB in webcam mode; it'll appear here on its own.")
                 .font(.caption).foregroundStyle(Theme.muted)
         }
         .padding(Theme.Space.l)
@@ -169,13 +169,13 @@ struct DeviceLiveScreen: View {
                 .padding(.trailing, Theme.chatWidth + Theme.Space.m)
         }
         .overlay(alignment: .trailing) {
-            FloatingPanel(tabs: [(.chat, "Chat"), (.control, "Control"), (.knowledge, "Saber")], selection: $tab) {
+            FloatingPanel(tabs: [(.chat, "Chat"), (.control, "Control"), (.knowledge, "Knowledge")], selection: $tab) {
                 switch tab {
                 case .chat:
                     if let chat {
                         ChatView(items: chat.items, isRunning: chat.isRunning, error: chat.error,
                                  hasKey: settings.hasAnthropicKey, robotName: robotName,
-                                 suggestions: ["¿Qué ves en la mesa?", "Abre un poco la pinza", "Saluda moviendo la muñeca"],
+                                 suggestions: ["What do you see on the table?", "Open the gripper a little", "Wave by moving the wrist"],
                                  conversations: chat.conversations, currentID: chat.conversationID,
                                  onSend: chat.send, onStop: chat.stop, onOpenSettings: { openSettings() },
                                  onNew: { chat.reset(robotName: robotName, robotID: "device-" + device.id) },
@@ -227,6 +227,6 @@ private struct Tile<Content: View>: View {
             // En los paneles chicos, un clic lo pasa a grande (el 3D grande se sigue pudiendo girar).
             if !focused { Color.clear.contentShape(.rect).onTapGesture(perform: onTap) }
         }
-        .help(focused ? "" : "Ver en grande")
+        .help(focused ? "" : "View large")
     }
 }

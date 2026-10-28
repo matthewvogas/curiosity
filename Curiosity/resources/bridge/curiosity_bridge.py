@@ -81,7 +81,7 @@ def cmd_snapshot(msg: dict) -> dict:
         for _ in range(8):  # los primeros cuadros suelen salir oscuros
             ok, frame = cap.read()
         if frame is None:
-            raise ValueError("La cámara no entregó imagen (¿la está usando otro programa?).")
+            raise ValueError("The camera didn't send an image (is another app using it?).")
         frame = cv2.resize(frame, (480, int(480 * frame.shape[0] / frame.shape[1])))
         ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
         return {"jpeg": base64.b64encode(buf.tobytes()).decode()}
@@ -103,16 +103,16 @@ def cmd_preflight(msg: dict) -> dict:
         try:
             bus.connect()
             if not bus.is_calibrated:
-                checks.append({"key": key, "state": "fail", "detail": "La calibración guardada no coincide con los motores. Calibra de nuevo en la terminal."})
+                checks.append({"key": key, "state": "fail", "detail": "The saved calibration doesn't match the motors. Calibrate again in the terminal."})
                 return
             poses[key] = bus.sync_read("Present_Position")
-            checks.append({"key": key, "state": "ok", "detail": "Responden los 6 motores y está calibrado."})
+            checks.append({"key": key, "state": "ok", "detail": "All 6 motors respond and it's calibrated."})
         except Exception as e:
             text = clean(e)
             if "busy" in text.lower() or "resource" in text.lower():
-                detail = "El puerto está ocupado: cierra otros programas que usen el robot."
+                detail = "The port is busy: close other apps using the robot."
             elif "missing" in text.lower() or "found" in text.lower() or "No such file" in text:
-                detail = "No responde. Revisa el cable USB y que la fuente esté encendida."
+                detail = "Not responding. Check the USB cable and that the power supply is on."
             else:
                 detail = text
             checks.append({"key": key, "state": "fail", "detail": detail})
@@ -132,9 +132,9 @@ def cmd_preflight(msg: dict) -> dict:
             diff = max(abs(poses["follower"][j] - poses["leader"][j]) for j in JOINTS if j != "gripper")
             if diff > 25:
                 checks.append({"key": "pose", "state": "warn",
-                               "detail": f"El leader y el follower están en poses distintas ({diff:.0f}°). Al empezar, el follower saltará a la pose del leader: acércalas."})
+                               "detail": f"The leader and follower are in different poses ({diff:.0f}°). When you start, the follower will jump to the leader's pose: bring them closer."})
             else:
-                checks.append({"key": "pose", "state": "ok", "detail": "El leader y el follower están en poses parecidas."})
+                checks.append({"key": "pose", "state": "ok", "detail": "The leader and follower are in similar poses."})
 
     cam = msg["camera"]
     try:
@@ -151,13 +151,13 @@ def cmd_preflight(msg: dict) -> dict:
         small = cv2.resize(frame[:, :, ::-1], (480, int(480 * frame.shape[0] / frame.shape[1])))
         ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 75])
         jpeg = base64.b64encode(buf.tobytes()).decode()
-        checks.append({"key": "camera", "state": "ok", "detail": f"Entrega imagen a {cam['width']}×{cam['height']}, {cam['fps']} fps."})
+        checks.append({"key": "camera", "state": "ok", "detail": f"Sending images at {cam['width']}×{cam['height']}, {cam['fps']} fps."})
     except Exception as e:
         text = clean(e)
         if "fps" in text:
-            detail = f"No da {cam['fps']} fps. Elige otra cámara en Ajustes del robot."
+            detail = f"Can't do {cam['fps']} fps. Pick another camera in Robot settings."
         elif "open" in text.lower() or "authoriz" in text.lower():
-            detail = "No se pudo abrir: revisa el permiso de cámara de Curiosity y que ningún otro programa la esté usando."
+            detail = "Couldn't open it: check Curiosity's camera permission and make sure no other app is using it."
         else:
             detail = text
         checks.append({"key": "camera", "state": "fail", "detail": detail})
@@ -172,10 +172,10 @@ def cmd_preflight(msg: dict) -> dict:
                 frame = c.read()
             finally:
                 c.disconnect()
-            checks.append({"key": f"cam{i}", "state": "ok", "detail": f"Entrega imagen ({frame.shape[1]}×{frame.shape[0]})."})
+            checks.append({"key": f"cam{i}", "state": "ok", "detail": f"Sending images ({frame.shape[1]}×{frame.shape[0]})."})
         except Exception as e:
             checks.append({"key": f"cam{i}", "state": "fail",
-                           "detail": f"No respondió ({clean(e)}). Quítala en Ajustes del robot o revisa su cable."})
+                           "detail": f"Didn't respond ({clean(e)}). Remove it in Robot settings or check its cable."})
     return {"checks": checks, "jpeg": jpeg}
 
 
@@ -196,7 +196,7 @@ def cmd_study(msg: dict) -> dict:
     names = (meta.features.get("observation.state", {}).get("names") or [])
     names = [n.removesuffix(".pos") for n in names]
     if not set(JOINTS) <= set(names):
-        raise ValueError(f"Este dataset no es de un SO-100/101 (articulaciones: {', '.join(names) or 'ninguna'}).")
+        raise ValueError(f"This dataset isn't from an SO-100/101 (joints: {', '.join(names) or 'none'}).")
     order = [names.index(j) for j in JOINTS]
     video_keys = list(meta.video_keys)
 
@@ -224,14 +224,14 @@ def cmd_study(msg: dict) -> dict:
         for k in range(1, len(diff)):
             sign = -1 if diff[k] < -0.4 else (1 if diff[k] > 0.4 else 0)
             if sign and sign != closing:
-                events.append({"t": round(float(times[rows[k]] - t0), 2), "gripper": "cierra" if sign < 0 else "abre",
+                events.append({"t": round(float(times[rows[k]] - t0), 2), "gripper": "closes" if sign < 0 else "opens",
                                "row": int(rows[k])})
                 closing = sign
         task_index = int(np.asarray(ds.hf_dataset["task_index"])[rows[0]]) if "task_index" in ds.hf_dataset.column_names else 0
         out_eps.append({"episode": int(e), "task": tasks.get(task_index, ""), "duration_s": round(float(times[rows[-1]] - t0), 1),
                         "trajectory": traj, "gripper_events": [{k: v for k, v in ev.items() if k != "row"} for ev in events]})
         if len(keyframes) < 12 and video_keys:
-            moments = [("inicio", int(rows[0]))] + [(f"pinza {ev['gripper']} ({ev['t']} s)", ev["row"]) for ev in events[:3]] + [("final", int(rows[-1]))]
+            moments = [("start", int(rows[0]))] + [(f"gripper {ev['gripper']} ({ev['t']} s)", ev["row"]) for ev in events[:3]] + [("end", int(rows[-1]))]
             for label, r in moments:
                 try:
                     img = ds[int(r)][video_keys[0]]  # r es la posición dentro de lo cargado
@@ -243,7 +243,7 @@ def cmd_study(msg: dict) -> dict:
                 except Exception:
                     pass  # una que no se pudo leer se omite
     return {"repo_id": repo_id, "fps": meta.fps, "robot_type": meta.robot_type, "total_episodes": total,
-            "tasks": list(tasks.values())[:10], "cameras": video_keys, "units": "grados" if degrees else "convertido a grados con la calibración de este robot",
+            "tasks": list(tasks.values())[:10], "cameras": video_keys, "units": "degrees" if degrees else "converted to degrees with this robot's calibration",
             "episodes": out_eps, "keyframes": keyframes}
 
 
@@ -307,7 +307,7 @@ def cmd_datasets(msg: dict) -> dict:
 def cmd_delete_dataset(msg: dict) -> dict:
     root = Path(msg["root"])
     if not (root / "meta" / "info.json").exists():
-        raise ValueError("Esa carpeta no es un dataset de LeRobot.")
+        raise ValueError("That folder isn't a LeRobot dataset.")
     shutil.rmtree(root)
     return {}
 
@@ -545,7 +545,7 @@ def native_camera_config(index):
     cap = cv2.VideoCapture(int(index))
     try:
         if not cap.isOpened():
-            raise ValueError(f"No se pudo abrir la cámara {index}.")
+            raise ValueError(f"Couldn't open camera {index}.")
         w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(round(cap.get(cv2.CAP_PROP_FPS) or 30))
         if h > w:
@@ -741,7 +741,7 @@ class Live(Session):
         """Una foto de cada cámara: [{camera, jpeg}]."""
         robot = self.robot
         if robot is None:
-            raise ValueError("El robot no está conectado.")
+            raise ValueError("The robot isn't connected.")
         return [{"camera": key, "jpeg": jpeg} for key in robot.cameras
                 if (jpeg := camera_frame(robot, key, width))]
 
@@ -831,7 +831,7 @@ class Live(Session):
                 cam.connect()
                 robot.cameras[f"cam{i}"] = cam
             except Exception as e:
-                self.error = f"La cámara {index} no abrió: {clean(e)}"
+                self.error = f"Camera {index} didn't open: {clean(e)}"
 
     def _settled(self, command):
         with self.lock:
@@ -924,7 +924,7 @@ class Rollout(Session):
 
         path = Path(self.msg["policy_path"])
         if not (path / "config.json").exists():
-            raise ValueError(f"No encuentro el modelo en {path}.")
+            raise ValueError(f"Can't find the model at {path}.")
         # Fuera de la terminal, LeRobot lee --policy.path de un registro interno, no de sys.argv.
         parser._config_path_args["policy"] = str(path)
         return draccus.parse(RolloutConfig, args=self.args())
@@ -986,7 +986,7 @@ def handle(msg: dict) -> dict:
         return QUERIES[cmd](msg)
     if cmd in SESSIONS:
         if current is not None and current.active:
-            raise ValueError("Ya hay algo corriendo con el robot. Detenlo primero.")
+            raise ValueError("Something is already running on the robot. Stop it first.")
         current = SESSIONS[cmd](msg)
         current.start()
         return {}
@@ -1004,16 +1004,16 @@ def handle(msg: dict) -> dict:
         return {}
     if cmd in ("live_targets", "live_home", "live_cameras", "live_trajectory"):
         if not (isinstance(current, Live) and current.active):
-            raise ValueError("El robot no está en vivo.")
+            raise ValueError("The robot isn't live.")
         payload = {"live_targets": msg.get("targets"), "live_cameras": msg.get("extra_cameras"),
                    "live_trajectory": {"points": msg.get("points"), "speed": msg.get("speed")}}.get(cmd)
         current.control(cmd.removeprefix("live_"), payload)
         return {}
     if cmd == "live_look":
         if not (isinstance(current, Live) and current.active):
-            raise ValueError("El robot no está en vivo.")
+            raise ValueError("The robot isn't live.")
         return {"images": current.look()}
-    raise ValueError(f"Orden desconocida: {cmd}")
+    raise ValueError(f"Unknown command: {cmd}")
 
 
 def preload():
@@ -1042,7 +1042,7 @@ def main():
             try:
                 emit({"id": rid, "ok": True, **handle(msg)})
             except SystemExit:  # draccus sale así cuando un argumento no le sirve
-                emit({"id": rid, "ok": False, "error": "LeRobot no aceptó la configuración (revisa los datos)."})
+                emit({"id": rid, "ok": False, "error": "LeRobot didn't accept the settings (check the data)."})
             except Exception as e:
                 emit({"id": rid, "ok": False, "error": clean(e)})
 

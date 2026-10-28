@@ -56,7 +56,7 @@ final class UseLibrary {
             robots.addFromLibrary(id: "library.\(robot.id)", name: robot.name, category: robot.category, modelURL: url)
             isAddedAny = true
         } catch {
-            self.error = "No se pudo descargar \(robot.name): \(error.localizedDescription)"
+            self.error = "Couldn't download \(robot.name): \(error.localizedDescription)"
         }
     }
 }

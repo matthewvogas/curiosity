@@ -17,7 +17,7 @@ enum HubQueries {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200,
               let list = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            throw NSError(domain: "Curiosity", code: 4, userInfo: [NSLocalizedDescriptionKey: "El Hub de Hugging Face no respondió."])
+            throw NSError(domain: "Curiosity", code: 4, userInfo: [NSLocalizedDescriptionKey: "The Hugging Face Hub didn't respond."])
         }
         return list.compactMap { d in
             guard let id = d["id"] as? String else { return nil }

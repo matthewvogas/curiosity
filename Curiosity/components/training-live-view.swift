@@ -29,10 +29,10 @@ struct TrainingLiveView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ProgressView(value: p.fraction)
                     HStack {
-                        Text("Paso \(p.step.formatted()) de \(total.formatted())")
+                        Text("Step \(p.step.formatted()) of \(total.formatted())")
                         Spacer()
-                        if let e = p.elapsed { Text("Lleva \(e)") }
-                        if running, let r = p.remaining { Text("· faltan \(r)") }
+                        if let e = p.elapsed { Text("\(e) elapsed") }
+                        if running, let r = p.remaining { Text("· \(r) left") }
                     }
                     .font(.caption).foregroundStyle(Theme.muted).monospacedDigit()
                 }
@@ -40,7 +40,7 @@ struct TrainingLiveView: View {
 
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 HStack {
-                    Text("Pérdida").font(.headline)
+                    Text("Loss").font(.headline)
                     Spacer()
                     if let loss = watch?.history.last?.loss ?? progress?.loss {
                         Text(String(format: "%.3f", loss)).font(.headline.monospacedDigit())
@@ -48,24 +48,24 @@ struct TrainingLiveView: View {
                 }
                 if let points = watch?.history, points.count > 1 {
                     Chart(points) { p in
-                        LineMark(x: .value("Paso", p.step), y: .value("Pérdida", p.loss))
+                        LineMark(x: .value("Step", p.step), y: .value("Loss", p.loss))
                             .interpolationMethod(.monotone)
                             .foregroundStyle(Theme.ink.opacity(0.85))
                     }
                     .chartYScale(type: .log)
-                    .chartXAxisLabel("paso")
+                    .chartXAxisLabel("step")
                     .frame(height: 180)
                 } else {
-                    Text("La curva aparece con los primeros registros (cada 200 pasos).")
+                    Text("The curve appears with the first log entries (every 200 steps).")
                         .font(.callout).foregroundStyle(Theme.muted)
                         .frame(maxWidth: .infinity, minHeight: 80)
                 }
-                Text("Más baja es mejor; que se aplane indica que ya aprendió lo que podía de esos datos.")
+                Text("Lower is better. When it flattens out, it has learned what it can from this data.")
                     .font(.caption).foregroundStyle(Theme.muted)
             }
 
             VStack(alignment: .leading, spacing: Theme.Space.s) {
-                Text("Registro").font(.headline)
+                Text("Log").font(.headline)
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 1) {
@@ -85,9 +85,9 @@ struct TrainingLiveView: View {
             }
 
             HStack {
-                if running, let onStop { Button("Detener entrenamiento", role: .destructive, action: onStop) }
+                if running, let onStop { Button("Stop training", role: .destructive, action: onStop) }
                 Spacer()
-                Button("Cerrar", action: onClose).keyboardShortcut(.cancelAction)
+                Button("Close", action: onClose).keyboardShortcut(.cancelAction)
             }
         }
         .padding(Theme.Space.xl)
@@ -95,9 +95,9 @@ struct TrainingLiveView: View {
     }
 
     private var status: String {
-        if running { return "Entrenando" }
-        if progress?.hasModel == true { return "Terminado" }
-        if progress?.error != nil { return "Se detuvo" }
-        return "Detenido"
+        if running { return "Training" }
+        if progress?.hasModel == true { return "Finished" }
+        if progress?.error != nil { return "Stopped" }
+        return "Not running"
     }
 }

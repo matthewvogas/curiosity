@@ -30,11 +30,11 @@ final class BridgeQueries {
         guard !isRunning else { return }
         guard FileManager.default.isExecutableFile(atPath: python) else {
             throw BridgeError(message: python.isEmpty
-                ? "No encontré LeRobot en esta Mac. Instálalo e indica su Python en Ajustes › Robots reales."
-                : "No encuentro el Python de LeRobot en \(python). Cámbialo en Ajustes.")
+                ? "Couldn't find LeRobot on this Mac. Install it and set its Python in Settings › Connected robots."
+                : "Can't find LeRobot's Python at \(python). Change it in Settings.")
         }
         guard let script = Bundle.main.url(forResource: "curiosity_bridge", withExtension: "py", subdirectory: "bridge") else {
-            throw BridgeError(message: "Falta el puente con LeRobot dentro de la app.")
+            throw BridgeError(message: "The LeRobot bridge is missing from the app.")
         }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: python)
@@ -77,7 +77,7 @@ final class BridgeQueries {
     /// Manda una orden y espera su respuesta. Lanza el error que explique el puente.
     @discardableResult
     func request(_ cmd: String, _ args: [String: Any] = [:]) async throws -> [String: Any] {
-        guard isRunning, let input else { throw BridgeError(message: "El puente con LeRobot no está corriendo.") }
+        guard isRunning, let input else { throw BridgeError(message: "The LeRobot bridge isn't running.") }
         let id = nextID
         nextID += 1
         var msg = args
@@ -90,7 +90,7 @@ final class BridgeQueries {
             input.write(line)
         }
         if reply.json["ok"] as? Bool == true { return reply.json }
-        throw BridgeError(message: reply.json["error"] as? String ?? "LeRobot falló sin decir por qué.")
+        throw BridgeError(message: reply.json["error"] as? String ?? "LeRobot failed without saying why.")
     }
 
     // MARK: - Interno
@@ -118,7 +118,7 @@ final class BridgeQueries {
     }
 
     private func terminated() {
-        let reason = stderrTail.last { $0.contains("Error") } ?? "El puente con LeRobot se cerró."
+        let reason = stderrTail.last { $0.contains("Error") } ?? "The LeRobot bridge closed."
         let error = BridgeError(message: reason)
         ready?.resume(throwing: error)
         ready = nil

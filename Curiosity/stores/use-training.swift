@@ -44,9 +44,9 @@ final class UseTraining {
     /// Lanza un entrenamiento. `dataset` es un repo_id (local/… para los de esta Mac, usuario/… del Hub).
     func start(name: String, dataset: String, datasetRoot: String?, policy: PolicyOption, steps: Int, batchSize: Int) {
         message = nil
-        guard AppPaths.isValidName(name) else { message = "El nombre solo puede tener letras, números, - y _."; return }
-        guard !jobs.contains(where: { $0.name == name }) else { message = "Ya hay un entrenamiento llamado «\(name)»."; return }
-        guard !TrainQueries.anyRunning() else { message = "Ya hay un entrenamiento corriendo: dos a la vez se pelean la GPU."; return }
+        guard AppPaths.isValidName(name) else { message = "The name can only have letters, numbers, - and _."; return }
+        guard !jobs.contains(where: { $0.name == name }) else { message = "There's already a training called “\(name)”."; return }
+        guard !TrainQueries.anyRunning() else { message = "A training is already running: two at once fight over the GPU."; return }
         let output = AppPaths.training.appendingPathComponent(name).path
         let log = AppPaths.logs.appendingPathComponent("\(name).log")
         let args = TrainQueries.arguments(dataset: dataset, datasetRoot: datasetRoot, policy: policy, steps: steps,

@@ -27,7 +27,7 @@ struct ChatView: View {
         VStack(spacing: 0) {
             HStack {
                 Button { showingHistory.toggle() } label: {
-                    Label("Historial", systemImage: "clock.arrow.circlepath").font(.callout)
+                    Label("History", systemImage: "clock.arrow.circlepath").font(.callout)
                 }
                 .buttonStyle(.borderless)
                 .disabled(conversations.isEmpty)
@@ -37,7 +37,7 @@ struct ChatView: View {
                                 onDelete: onDeleteConversation)
                 }
                 Spacer()
-                Button(action: onNew) { Label("Nueva", systemImage: IconName.clear.rawValue).font(.callout) }
+                Button(action: onNew) { Label("New", systemImage: IconName.clear.rawValue).font(.callout) }
                     .buttonStyle(.borderless)
                     .disabled(items.isEmpty)
             }
@@ -102,8 +102,8 @@ private struct ApprovalRow: View {
                 Spacer()
                 switch state {
                 case .pending: EmptyView()
-                case .approved: Text("Aprobado").font(.caption).foregroundStyle(Theme.muted)
-                case .rejected: Text("No aprobado").font(.caption).foregroundStyle(Theme.muted)
+                case .approved: Text("Approved").font(.caption).foregroundStyle(Theme.muted)
+                case .rejected: Text("Not approved").font(.caption).foregroundStyle(Theme.muted)
                 }
             }
             Text(detail).font(.callout.monospacedDigit()).foregroundStyle(Theme.muted)
@@ -112,7 +112,7 @@ private struct ApprovalRow: View {
                 HStack {
                     Spacer()
                     Button("No", action: onReject)
-                    Button("Mover", action: onApprove).buttonStyle(.borderedProminent)
+                    Button("Move", action: onApprove).buttonStyle(.borderedProminent)
                 }
                 .controlSize(.small)
             }
@@ -133,8 +133,8 @@ private struct ChatWelcome: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                Text("Habla con \(robotName)").font(.title2.weight(.semibold))
-                Text("Pídele tareas en tus palabras. La IA mira la escena, planea y mueve el robot en la simulación.")
+                Text("Talk to \(robotName)").font(.title2.weight(.semibold))
+                Text("Ask for tasks in your own words. The AI looks at the scene, plans and moves the robot in the simulation.")
                     .font(.callout).foregroundStyle(Theme.muted)
             }
             if hasKey {
@@ -153,10 +153,10 @@ private struct ChatWelcome: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
-                    Text("Conecta un modelo de IA").font(.callout.weight(.semibold))
-                    Text("Pega tu API key de Anthropic. Se guarda en el Llavero de tu Mac.")
+                    Text("Connect an AI model").font(.callout.weight(.semibold))
+                    Text("Paste your Anthropic API key. It's stored in your Mac's Keychain.")
                         .font(.caption).foregroundStyle(Theme.muted)
-                    Button("Abrir Ajustes", action: onOpenSettings)
+                    Button("Open Settings", action: onOpenSettings)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.regular)
                 }
@@ -225,7 +225,7 @@ private struct NoticeRow: View {
 
 /// «Pensando…» con un brillo que lo recorre de izquierda a derecha.
 private struct ThinkingRow: View {
-    private let label = Text("Pensando…").font(.callout)
+    private let label = Text("Thinking…").font(.callout)
 
     var body: some View {
         label
@@ -242,7 +242,7 @@ private struct ThinkingRow: View {
                 }
                 .mask(label)
             }
-            .accessibilityLabel("Pensando")
+            .accessibilityLabel("Thinking")
     }
 }
 
@@ -260,8 +260,8 @@ private struct ChatComposer: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: Theme.Space.s) {
-            TextField("Mensaje", text: $draft,
-                      prompt: Text(enabled ? "Pídele algo a \(robotName)" : "Conecta tu API key para empezar"),
+            TextField("Message", text: $draft,
+                      prompt: Text(enabled ? "Ask \(robotName) anything" : "Add your API key to get started"),
                       axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
@@ -280,7 +280,7 @@ private struct ChatComposer: View {
             .buttonStyle(.plain)
             .disabled(!isRunning && !canSend)
             .keyboardShortcut(isRunning ? .cancelAction : .defaultAction)
-            .help(isRunning ? "Detener" : "Enviar")
+            .help(isRunning ? "Stop" : "Send")
         }
         .padding(.leading, Theme.Space.m)
         .padding([.vertical, .trailing], Self.inset)
@@ -320,7 +320,7 @@ private struct HistoryList: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .contextMenu { Button("Borrar conversación", role: .destructive) { onDelete(c.id) } }
+                    .contextMenu { Button("Delete conversation", role: .destructive) { onDelete(c.id) } }
                 }
             }
             .padding(Theme.Space.s)

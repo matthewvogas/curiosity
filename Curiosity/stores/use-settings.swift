@@ -66,9 +66,9 @@ final class UseSettings {
             _ = try await AnthropicQueries.createMessage(apiKey: key, body: [
                 "model": modelID, "max_tokens": 64,
                 "output_config": ["effort": "low"],
-                "messages": [["role": "user", "content": "Responde solo: ok"]],
+                "messages": [["role": "user", "content": "Reply only: ok"]],
             ])
-            testResult = (true, "Conectado")
+            testResult = (true, "Connected")
         } catch {
             testResult = (false, error.localizedDescription)
         }

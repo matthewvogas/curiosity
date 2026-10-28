@@ -34,7 +34,7 @@ final class UseLiveRobot {
     /// Las cámaras en vivo, con su nombre: la principal primero.
     var cameras: [(key: String, name: String, frame: Data?)] {
         guard isLive, let device else { return [] }
-        var out = [("front", device.cameraName ?? "Principal", lerobot.frames["front"])]
+        var out = [("front", device.cameraName ?? "Main", lerobot.frames["front"])]
         for (i, extra) in lerobot.extraCameras(device).enumerated() {
             out.append(("cam\(i + 1)", extra.name, lerobot.frames["cam\(i + 1)"]))
         }
@@ -141,7 +141,7 @@ extension UseLiveRobot: ChatBody {
     var chatTools: [[String: Any]] {
         RealAgentTools.definitions + (knowledge.active == nil ? [] : KnowledgePrompt.liveTools + [RealAgentTools.lookReferences])
     }
-    var chatNotReady: String { "Conecta el robot en vivo para hablar con él." }
+    var chatNotReady: String { "Connect the robot live to talk to it." }
 
     func chatSystemPrompt(robotName: String) -> String? {
         guard isReady else { return nil }
@@ -151,16 +151,16 @@ extension UseLiveRobot: ChatBody {
 
     func chatTitle(_ name: String, _ input: [String: Any]) -> String {
         switch name {
-        case "go_to_pose": "Ir a «\(input["name"] as? String ?? "")»"
-        case "play_segment": "Reproducir «\(input["name"] as? String ?? "")»"
-        case "look_references": "Mirando las fotos de las demostraciones"
+        case "go_to_pose": "Go to \"\(input["name"] as? String ?? "")\""
+        case "play_segment": "Play \"\(input["name"] as? String ?? "")\""
+        case "look_references": "Looking at the demonstration pictures"
         default: RealAgentTools.title(for: name)
         }
     }
 
     func chatApproval(_ name: String, _ input: [String: Any]) -> String? {
         let offsets = Self.offsets(input)
-        let extra = offsets.isEmpty ? "" : "\nAjustes: " + offsets.map { "\($0.key) \($0.value >= 0 ? "+" : "")\(RealAgentTools.format($0.value, $0.key))" }.joined(separator: ", ")
+        let extra = offsets.isEmpty ? "" : "\nAdjustments: " + offsets.map { "\($0.key) \($0.value >= 0 ? "+" : "")\(RealAgentTools.format($0.value, $0.key))" }.joined(separator: ", ")
         switch name {
         case "go_to_pose":
             guard let pose = knowledge.active?.poses.first(where: { $0.name == input["name"] as? String }) else { return nil }
@@ -169,7 +169,7 @@ extension UseLiveRobot: ChatBody {
         case "play_segment":
             guard let s = knowledge.active?.segments.first(where: { $0.name == input["name"] as? String }) else { return nil }
             let speed = Self.speed(input)
-            return "Demostración \(s.episode), de \(s.from) a \(s.to) s, a \(Int(speed * 100)) % de su velocidad\(s.note.isEmpty ? "" : " (\(s.note))")." + extra
+            return "Demonstration \(s.episode), from \(s.from) to \(s.to) s, at \(Int(speed * 100))% of its speed\(s.note.isEmpty ? "" : " (\(s.note))")." + extra
         default:
             return RealAgentTools.approval(for: name, input: input, current: joints)
         }
@@ -203,11 +203,11 @@ extension UseLiveRobot: ChatBody {
         if !moves.isEmpty { out["previous_moves"] = Array(moves.suffix(3)) }
         moves = Array((moves + [move]).suffix(5))
         if !clipped.isEmpty { out["clipped_to_limits"] = clipped }
-        return .text(AgentTools.json(out), problem: clipped.isEmpty ? nil : "Ajustado al rango: \(clipped.joined(separator: ", "))")
+        return .text(AgentTools.json(out), problem: clipped.isEmpty ? nil : "Clamped to range: \(clipped.joined(separator: ", "))")
     }
 
     func chatRun(_ name: String, _ input: [String: Any]) async throws -> ChatToolOutput {
-        guard isReady else { throw NSError(domain: "Curiosity", code: 9, userInfo: [NSLocalizedDescriptionKey: "El robot ya no está en vivo."]) }
+        guard isReady else { throw NSError(domain: "Curiosity", code: 9, userInfo: [NSLocalizedDescriptionKey: "The robot is no longer live."]) }
         switch name {
         case "get_state":
             var out = await pose()
@@ -224,7 +224,7 @@ extension UseLiveRobot: ChatBody {
 
         case "go_to_pose":
             guard let pose = knowledge.active?.poses.first(where: { $0.name == input["name"] as? String }) else {
-                return .text("No hay una pose con ese nombre.", problem: "Pose desconocida")
+                return .text("There's no pose with that name.", problem: "Unknown pose")
             }
             let target = pose.joints.merging(Self.offsets(input)) { $0 + $1 }
             let (clamped, clipped) = clamp(target)
@@ -233,13 +233,13 @@ extension UseLiveRobot: ChatBody {
         case "play_segment":
             guard let s = knowledge.active?.segments.first(where: { $0.name == input["name"] as? String }),
                   let traj = knowledge.active?.trajectories[String(s.episode)] else {
-                return .text("No hay un tramo con ese nombre.", problem: "Tramo desconocido")
+                return .text("There's no segment with that name.", problem: "Unknown segment")
             }
             let offsets = Self.offsets(input), speed = Self.speed(input)
             let points = traj.filter { $0[0] >= s.from - 0.01 && $0[0] <= s.to + 0.01 }.map { row in
                 [row[0]] + RealAgentTools.joints.enumerated().map { i, j in row[i + 1] + (offsets[j] ?? 0) }
             }
-            guard let last = points.last else { return .text("El tramo está vacío.", problem: "Tramo vacío") }
+            guard let last = points.last else { return .text("The segment is empty.", problem: "Empty segment") }
             let end = Dictionary(uniqueKeysWithValues: zip(RealAgentTools.joints, last.dropFirst()))
             return try await perform(clamp(end).0, play: {
                 try await self.lerobot.liveTrajectory(points, speed: speed)
@@ -254,7 +254,7 @@ extension UseLiveRobot: ChatBody {
             var images = photos.map { (label: label($0.camera), jpeg: $0.jpeg) }
             // El modelo 3D en la misma pose: muestra la forma del brazo aunque las cámaras no lo vean entero.
             if twinLoaded, let model = try? await twin.capture(camera: nil) {
-                images.append(("Modelo 3D (réplica en la pose actual del robot)", model))
+                images.append(("3D model (replica in the robot's current pose)", model))
             }
             return .images(images)
 
@@ -264,7 +264,7 @@ extension UseLiveRobot: ChatBody {
             return .text(AgentTools.json(await pose()))
 
         default:
-            return .text("Herramienta desconocida: \(name)", problem: "Herramienta desconocida")
+            return .text("Unknown tool: \(name)", problem: "Unknown tool")
         }
     }
 }

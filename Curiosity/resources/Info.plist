@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>es</string>
+	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>Curiosity</string>
 	<key>CFBundleExecutable</key>
@@ -25,7 +25,7 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Curiosity usa la cámara del robot para grabar demostraciones y para que el robot vea mientras hace una tarea.</string>
+	<string>Curiosity uses the robot's camera to record demonstrations and so the robot can see while it does a task.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Rosvelt · Curiosity</string>
 </dict>

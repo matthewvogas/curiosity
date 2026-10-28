@@ -14,10 +14,10 @@ struct TaskStatus {
 
     /// Lo que se ve en la barra lateral y en las tarjetas.
     func summary(_ task: TeachTask) -> String {
-        if isTraining { return "Entrenando · \(Int((progress?.fraction ?? 0) * 100)) %" }
-        if hasModel { return "Aprendida" }
-        if task.hubDataset { return "Datos de Hugging Face" }
-        return demos == 0 ? "Sin demostraciones" : "\(demos) de \(task.episodes) demostraciones"
+        if isTraining { return "Training · \(Int((progress?.fraction ?? 0) * 100)) %" }
+        if hasModel { return "Learned" }
+        if task.hubDataset { return "Data from Hugging Face" }
+        return demos == 0 ? "No demonstrations" : "\(demos) of \(task.episodes) demonstrations"
     }
 
     static func of(_ task: TeachTask, datasets: [DatasetInfo], jobs: [TrainJob], progress: [String: TrainProgress]) -> TaskStatus {

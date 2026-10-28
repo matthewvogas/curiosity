@@ -3,7 +3,7 @@ import Foundation
 /// La simulación como cuerpo del chat: las herramientas de AgentTools corridas sobre el motor.
 extension UseSimulation: ChatBody {
     var chatTools: [[String: Any]] { AgentTools.definitions }
-    var chatNotReady: String { "Espera a que el robot termine de cargar." }
+    var chatNotReady: String { "Wait for the robot to finish loading." }
 
     func chatSystemPrompt(robotName: String) -> String? {
         model.map { AgentTools.systemPrompt(model: $0, robotName: robotName) }
@@ -34,7 +34,7 @@ extension UseSimulation: ChatBody {
             await run(seconds: seconds)
             var out = chatState(model)
             if !unknown.isEmpty { out["unknown_joints"] = unknown }
-            return .text(AgentTools.json(out), problem: unknown.isEmpty ? nil : "Sin motor o no existe: \(unknown.joined(separator: ", "))")
+            return .text(AgentTools.json(out), problem: unknown.isEmpty ? nil : "No motor or doesn't exist: \(unknown.joined(separator: ", "))")
 
         case "look":
             let camera = (input["camera"] as? String).flatMap { $0.isEmpty ? nil : $0 }
@@ -61,7 +61,7 @@ extension UseSimulation: ChatBody {
             return .text(AgentTools.json(chatState(model)))
 
         default:
-            return .text("Herramienta desconocida: \(name)", problem: "Herramienta desconocida")
+            return .text("Unknown tool: \(name)", problem: "Unknown tool")
         }
     }
 

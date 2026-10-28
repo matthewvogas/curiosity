@@ -49,82 +49,82 @@ struct TaskPage: View {
 
             Section {
                 if let hub = info.hubDataset {
-                    LabeledContent("Datos de Hugging Face", value: hub)
-                    Button("Grabar las mías en su lugar", action: actions.onUseOwn)
+                    LabeledContent("Data from Hugging Face", value: hub)
+                    Button("Record my own instead", action: actions.onUseOwn)
                 } else {
-                    LabeledContent("Grabadas") {
-                        Text("\(info.demos) de \(episodes)").monospacedDigit()
+                    LabeledContent("Recorded") {
+                        Text("\(info.demos) of \(episodes)").monospacedDigit()
                     }
-                    Stepper("Quiero \(episodes)", value: $episodes, in: 5...300, step: 5)
-                    Stepper("Hasta \(Int(episodeSeconds)) s cada una", value: $episodeSeconds, in: 10...300, step: 5)
+                    Stepper("Goal: \(episodes)", value: $episodes, in: 5...300, step: 5)
+                    Stepper("Up to \(Int(episodeSeconds)) s each", value: $episodeSeconds, in: 10...300, step: 5)
                     HStack {
-                        Button("Usar datos de Hugging Face…", action: actions.onHub).buttonStyle(.link)
+                        Button("Use data from Hugging Face…", action: actions.onHub).buttonStyle(.link)
                         Spacer()
-                        if !info.canRecord { Button("Configurar leader y cámara…", action: actions.onFixSetup) }
-                        Button(info.demos == 0 ? "Grabar" : "Seguir grabando", action: actions.onRecord)
+                        if !info.canRecord { Button("Set up leader and camera…", action: actions.onFixSetup) }
+                        Button(info.demos == 0 ? "Record" : "Keep recording", action: actions.onRecord)
                             .buttonStyle(.borderedProminent)
                             .disabled(!info.canRecord || info.busy || info.demos >= episodes)
                     }
                 }
             } header: {
-                Text("1. Demostraciones")
+                Text("1. Demonstrations")
             } footer: {
-                Text("Haz la tarea con el leader de principio a fin y mueve un poco el objeto entre una y otra. Teclas: → terminar, ← repetir, Esc guardar.")
+                Text("Do the task with the leader from start to finish, and move the object a little between each one. Keys: → finish, ← redo, Esc save.")
                     .foregroundStyle(Theme.muted)
             }
 
             Section {
-                LabeledContent("Estado", value: trainState)
+                LabeledContent("Status", value: trainState)
                 if training, let p = info.progress {
                     ProgressView(value: p.fraction)
                 }
-                Picker("Modelo", selection: $policy) {
+                Picker("Model", selection: $policy) {
                     ForEach(info.policies, id: \.id) { Text($0.label).tag($0.id) }
                 }
                 .disabled(training)
-                Stepper("\(steps.formatted()) pasos", value: $steps, in: 1000...200_000, step: 1000)
+                Stepper("\(steps.formatted()) steps", value: $steps, in: 1000...200_000, step: 1000)
                     .disabled(training)
                 HStack {
                     if let watch = actions.onWatchTraining {
-                        Button(training ? "Ver en vivo" : "Ver entrenamiento", action: watch).buttonStyle(.link)
+                        Button(training ? "Watch live" : "View training", action: watch).buttonStyle(.link)
                     }
                     Spacer()
                     if training {
-                        Button("Detener", action: actions.onStopTraining)
+                        Button("Stop", action: actions.onStopTraining)
                     } else {
                         if info.hasModel {
-                            Button("Entrenar de nuevo", action: actions.onTrain)
+                            Button("Train again", action: actions.onTrain)
                         } else {
-                            Button("Entrenar", action: actions.onTrain).buttonStyle(.borderedProminent).disabled(!hasData)
+                            Button("Train", action: actions.onTrain).buttonStyle(.borderedProminent).disabled(!hasData)
                         }
                     }
                 }
             } header: {
-                Text("2. Entrenamiento")
+                Text("2. Training")
             } footer: {
-                Text(hasData ? "Tarda \(info.eta) en tu Mac y sigue aunque cierres la app." : "Primero graba algunas demostraciones.")
+                Text(hasData ? "Takes \(info.eta) on your Mac and keeps going even if you close the app." : "Record some demonstrations first.")
                     .foregroundStyle(Theme.muted)
             }
 
             Section {
-                Stepper("\(Int(runSeconds)) s por intento", value: $runSeconds, in: 10...600, step: 10)
+                Stepper("\(Int(runSeconds)) s per try", value: $runSeconds, in: 10...600, step: 10)
                 HStack {
                     Spacer()
-                    Button("Probar en el robot", action: actions.onRun)
+                    Button("Run on the robot", action: actions.onRun)
                         .buttonStyle(.borderedProminent)
                         .disabled(!info.hasModel || training || !info.canRun || info.busy)
                 }
             } header: {
-                Text("3. Prueba")
+                Text("3. Run")
             } footer: {
-                Text(info.hasModel ? "El robot se mueve solo. Despeja la mesa; Esc lo detiene." : "Disponible cuando termine el entrenamiento.")
+                Text(info.hasModel ? "The robot moves on its own. Clear the table; Esc stops it." : "Available once training finishes.")
                     .foregroundStyle(Theme.muted)
             }
 
             Section {
-                Button("Quitar tarea", role: .destructive, action: actions.onRemove)
+                Button("Remove task", role: .destructive, action: actions.onRemove)
             } footer: {
-                Text("Las demostraciones y el modelo se quedan en tu Mac.").foregroundStyle(Theme.muted)
+                Text("The demonstrations and the model stay on your Mac.").foregroundStyle(Theme.muted)
             }
         }
         .formStyle(.grouped)
@@ -134,10 +134,10 @@ struct TaskPage: View {
 
     private var trainState: String {
         if training, let p = info.progress {
-            return "\(Int(p.fraction * 100)) %\(p.remaining.map { " · faltan \($0)" } ?? "")"
+            return "\(Int(p.fraction * 100)) %\(p.remaining.map { " · \($0) left" } ?? "")"
         }
-        if info.hasModel { return "Listo" }
-        if let e = info.progress?.error { return "Se detuvo: \(e)" }
-        return "Sin entrenar"
+        if info.hasModel { return "Ready" }
+        if let e = info.progress?.error { return "Stopped: \(e)" }
+        return "Not trained"
     }
 }

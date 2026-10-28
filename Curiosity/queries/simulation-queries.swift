@@ -86,7 +86,7 @@ final class SimulationQueries: NSObject, WKScriptMessageHandler {
                                        ["camera": camera ?? NSNull(), "width": width, "format": png ? "png" : "jpeg"])
         guard let url = value as? String, let comma = url.firstIndex(of: ","),
               let data = Data(base64Encoded: String(url[url.index(after: comma)...])) else {
-            throw NSError(domain: "Curiosity", code: 1, userInfo: [NSLocalizedDescriptionKey: "No se pudo capturar la imagen."])
+            throw NSError(domain: "Curiosity", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't capture the image."])
         }
         return data
     }
@@ -117,7 +117,7 @@ final class SimulationQueries: NSObject, WKScriptMessageHandler {
 
     private func evaluate(_ body: String, _ arguments: [String: Any]) async throws -> Any? {
         guard let webView, ready else {
-            throw NSError(domain: "Curiosity", code: 2, userInfo: [NSLocalizedDescriptionKey: "La simulación todavía no está lista."])
+            throw NSError(domain: "Curiosity", code: 2, userInfo: [NSLocalizedDescriptionKey: "The simulation isn't ready yet."])
         }
         return try await webView.callAsyncJavaScript(body, arguments: arguments, contentWorld: .page)
     }

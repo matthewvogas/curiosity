@@ -11,11 +11,11 @@ struct ModelSheet: View {
             HStack {
                 Text(title).font(.headline)
                 Spacer()
-                Button("Copiar") {
+                Button("Copy") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                 }
-                Button("Cerrar") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
             }
             .padding(Theme.Space.l)
             ScrollView {

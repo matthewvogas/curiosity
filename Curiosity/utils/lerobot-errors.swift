@@ -5,14 +5,14 @@ enum LeRobotErrors {
     static func friendly(_ raw: String) -> String {
         let t = raw.lowercased()
         if t.contains("camera") || t.contains("opencv") {
-            return "La cámara no respondió. Revisa el permiso de cámara de Curiosity y que ningún otro programa la use."
+            return "The camera didn't respond. Check Curiosity's camera permission and make sure no other app is using it."
         }
-        if t.contains("busy") || t.contains("resource temporarily") { return "El puerto del robot está ocupado por otro programa." }
+        if t.contains("busy") || t.contains("resource temporarily") { return "The robot's port is being used by another app." }
         if t.contains("no such file") || t.contains("could not connect") || t.contains("missing motor") {
-            return "Un brazo no responde. Revisa el cable USB y que su fuente esté encendida."
+            return "An arm isn't responding. Check the USB cable and that its power supply is on."
         }
-        if t.contains("calibrat") { return "La calibración no coincide con los motores. Calibra de nuevo en la terminal." }
-        if t.contains("fileexists") || t.contains("file exists") { return "Ya había una carpeta con ese nombre. Intenta de nuevo." }
-        return "LeRobot se detuvo: \(raw)"
+        if t.contains("calibrat") { return "The calibration doesn't match the motors. Calibrate again in the terminal." }
+        if t.contains("fileexists") || t.contains("file exists") { return "A folder with that name already exists. Try again." }
+        return "LeRobot stopped: \(raw)"
     }
 }

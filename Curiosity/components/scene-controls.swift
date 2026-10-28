@@ -14,9 +14,9 @@ struct SceneControls: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.xl) {
-                section("Objetos") {
+                section("Objects") {
                     if objects.isEmpty {
-                        Text("No hay objetos. Agrega uno abajo o pídeselo a la IA.").font(.callout).foregroundStyle(Theme.muted)
+                        Text("No objects yet. Add one below or ask the AI.").font(.callout).foregroundStyle(Theme.muted)
                     }
                     ForEach(objects) { o in
                         HStack(spacing: Theme.Space.s) {
@@ -32,17 +32,17 @@ struct SceneControls: View {
                     }
                 }
 
-                section("Agregar") {
-                    Picker("Forma", selection: $shape) {
-                        Text("Caja").tag("box"); Text("Esfera").tag("sphere"); Text("Cilindro").tag("cylinder")
+                section("Add") {
+                    Picker("Shape", selection: $shape) {
+                        Text("Box").tag("box"); Text("Sphere").tag("sphere"); Text("Cylinder").tag("cylinder")
                     }
                     .pickerStyle(.segmented).labelsHidden()
-                    LabeledSlider(title: "Tamaño", value: $sizeCM, range: 1...10, format: "%.1f cm")
-                    LabeledSlider(title: "Masa", value: $massG, range: 1...500, format: "%.0f g")
+                    LabeledSlider(title: "Size", value: $sizeCM, range: 1...10, format: "%.1f cm")
+                    LabeledSlider(title: "Mass", value: $massG, range: 1...500, format: "%.0f g")
                     HStack {
                         ColorPicker("Color", selection: $color).font(.callout)
                         Spacer()
-                        Button("Soltar en la mesa") { onAdd(newObject) }
+                        Button("Drop on the table") { onAdd(newObject) }
                             .buttonStyle(.borderedProminent).controlSize(.small)
                     }
                 }
@@ -60,7 +60,7 @@ struct SceneControls: View {
     }
 
     private static func label(_ shape: String) -> String {
-        switch shape { case "sphere": "Esfera"; case "cylinder": "Cilindro"; default: "Caja" }
+        switch shape { case "sphere": "Sphere"; case "cylinder": "Cylinder"; default: "Box" }
     }
 
     private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {

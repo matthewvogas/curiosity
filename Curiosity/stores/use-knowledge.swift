@@ -27,9 +27,9 @@ final class UseKnowledge {
     /// Estudia un dataset (`root` para los de esta Mac; sin él se baja del Hub solo lo necesario).
     func study(repoID: String, root: String?, followerID: String?) async {
         guard studying == nil else { return }
-        guard let key = settings.anthropicKey else { error = "Conecta tu API key en Ajustes."; return }
+        guard let key = settings.anthropicKey else { error = "Add your API key in Settings."; return }
         error = nil
-        studying = root == nil ? "Bajando unas demostraciones de Hugging Face…" : "Leyendo las demostraciones…"
+        studying = root == nil ? "Downloading some demonstrations from Hugging Face…" : "Reading the demonstrations…"
         defer { studying = nil }
         do {
             if lerobot.status != .ready { await lerobot.start() }
@@ -37,9 +37,9 @@ final class UseKnowledge {
             if let root { args["root"] = root }
             if let followerID { args["follower_id"] = followerID }
             let material = Self.material(try await lerobot.request("study", args), repoID: repoID)
-            guard !material.episodes.isEmpty else { throw Self.fail("El dataset no tiene demostraciones legibles.") }
+            guard !material.episodes.isEmpty else { throw Self.fail("The dataset has no readable demonstrations.") }
 
-            studying = "Estudiando \(material.episodes.count) demostraciones…"
+            studying = "Studying \(material.episodes.count) demonstrations…"
             let response = try await AnthropicQueries.createMessage(apiKey: key, body: [
                 "model": settings.modelID,
                 "max_tokens": 8000,
@@ -50,7 +50,7 @@ final class UseKnowledge {
             ])
             guard let input = (response["content"] as? [[String: Any]] ?? [])
                 .first(where: { $0["type"] as? String == "tool_use" })?["input"] as? [String: Any] else {
-                throw Self.fail("La IA no escribió el paquete.")
+                throw Self.fail("The AI didn't write the package.")
             }
             let package = KnowledgePrompt.package(from: input, material: material)
             try KnowledgeQueries.save(package)

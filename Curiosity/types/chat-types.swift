@@ -64,8 +64,8 @@ struct AIModel: Identifiable, Hashable {
     let detail: String
 
     static let all: [AIModel] = [
-        AIModel(id: "claude-opus-5-5", name: "Claude Opus 5.5", detail: "El más capaz para planear tareas"),
-        AIModel(id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", detail: "Rápido y capaz"),
-        AIModel(id: "claude-haiku-5-5", name: "Claude Haiku 5.5", detail: "El más rápido y económico"),
+        AIModel(id: "claude-opus-5-5", name: "Claude Opus 5.5", detail: "Most capable for planning tasks"),
+        AIModel(id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", detail: "Fast and capable"),
+        AIModel(id: "claude-haiku-5-5", name: "Claude Haiku 5.5", detail: "Fastest and cheapest"),
     ]
 }

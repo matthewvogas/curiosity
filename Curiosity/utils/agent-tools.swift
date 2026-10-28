@@ -7,44 +7,44 @@ enum AgentTools {
 
     static let definitions: [[String: Any]] = [
         tool("get_state",
-             "Lee el estado actual: cada articulación (posición, objetivo, límites, fuerza) y los objetos de la escena. Úsala antes de planear un movimiento.",
+             "Reads the current state: each joint (position, target, limits, force) and the objects in the scene. Use it before planning a move.",
              properties: [:], required: []),
         tool("move_joints",
-             "Manda objetivos a las articulaciones y deja correr la simulación unos segundos para que el robot se mueva. Los motores tienen fuerza limitada: si algo lo bloquea, no llegará al objetivo. Devuelve el estado final.",
+             "Sends targets to the joints and runs the simulation for a few seconds so the robot moves. Motors have limited force: if something blocks it, it won't reach the target. Returns the final state.",
              properties: [
                 "targets": [
                     "type": "array",
-                    "description": "Objetivos. Valores en grados para articulaciones que giran y en centímetros para las que se deslizan.",
+                    "description": "Targets. Values in degrees for joints that rotate and in centimeters for joints that slide.",
                     "items": [
                         "type": "object",
                         "properties": [
-                            "joint": ["type": "string", "description": "Nombre exacto de la articulación."],
-                            "value": ["type": "number", "description": "Objetivo en grados o centímetros."],
+                            "joint": ["type": "string", "description": "Exact joint name."],
+                            "value": ["type": "number", "description": "Target in degrees or centimeters."],
                         ],
                         "required": ["joint", "value"],
                         "additionalProperties": false,
                     ],
                 ],
-                "seconds": ["type": "number", "description": "Cuánto dejar correr la simulación después (0.2 a 5). Por defecto 1.5."],
+                "seconds": ["type": "number", "description": "How long to run the simulation afterwards, in seconds (0.2 to 5). Default 1.5."],
              ], required: ["targets", "seconds"]),
         tool("look",
-             "Toma una foto de la escena para ver dónde están el robot y los objetos. Sin cámara, usa la vista principal; con el nombre de una cámara montada en el robot, la vista desde ahí.",
+             "Takes a picture of the scene to see where the robot and objects are. With no camera, it uses the main view; with the name of a camera mounted on the robot, the view from there.",
              properties: [
-                "camera": ["type": "string", "description": "Nombre de una cámara del robot, o vacío para la vista principal."],
+                "camera": ["type": "string", "description": "Name of a robot camera, or empty for the main view."],
              ], required: ["camera"]),
         tool("add_object",
-             "Pone un objeto en la escena (cae con gravedad). Posición en centímetros en el marco de la base del robot (z hacia arriba).",
+             "Puts an object in the scene (it falls with gravity). Position in centimeters in the robot base frame (z up).",
              properties: [
                 "shape": ["type": "string", "enum": ["box", "sphere", "cylinder"]],
                 "size_cm": ["type": "array", "items": ["type": "number"],
-                            "description": "box: [largo, ancho, alto] · sphere: [radio] · cylinder: [radio, alto]"],
+                            "description": "box: [length, width, height] · sphere: [radius] · cylinder: [radius, height]"],
                 "mass_g": ["type": "number"],
                 "position_cm": ["type": "array", "items": ["type": "number"], "description": "[x, y, z]"],
-                "color": ["type": "string", "description": "Color en hexadecimal, por ejemplo #e4572e."],
+                "color": ["type": "string", "description": "Hex color, for example #e4572e."],
              ], required: ["shape", "size_cm", "mass_g", "position_cm", "color"]),
-        tool("remove_object", "Quita un objeto de la escena por su id.",
+        tool("remove_object", "Removes an object from the scene by its id.",
              properties: ["id": ["type": "integer"]], required: ["id"]),
-        tool("reset", "Vuelve el robot a su pose inicial, quieto. No mueve los objetos.",
+        tool("reset", "Returns the robot to its starting pose, at rest. Doesn't move the objects.",
              properties: [:], required: []),
     ]
 
@@ -67,36 +67,36 @@ enum AgentTools {
     static func systemPrompt(model: RobotModel, robotName: String) -> String {
         let joints = model.actuatedJoints.map { j -> String in
             let range = (j.lower != nil && j.upper != nil)
-                ? "\(Units.format(j.lower!, jointType: j.type)) a \(Units.format(j.upper!, jointType: j.type))"
-                : "sin límite"
-            return "- \(j.name) (\(j.type == "prismatic" ? "desliza" : "gira"), \(range), fuerza máx. \(String(format: "%.1f", j.fmax)))"
+                ? "\(Units.format(j.lower!, jointType: j.type)) to \(Units.format(j.upper!, jointType: j.type))"
+                : "no limit"
+            return "- \(j.name) (\(j.type == "prismatic" ? "slides" : "rotates"), \(range), max force \(String(format: "%.1f", j.fmax)))"
         }.joined(separator: "\n")
-        let cameras = model.cameras.isEmpty ? "ninguna" : model.cameras.joined(separator: ", ")
+        let cameras = model.cameras.isEmpty ? "none" : model.cameras.joined(separator: ", ")
         return """
-        Eres el asistente de Curiosity, un simulador de robots. Controlas un robot simulado con física \
-        real (gravedad, choques, fricción, motores con fuerza limitada) a través de herramientas. La \
-        persona te pide tareas en lenguaje natural; tú las conviertes en movimientos.
+        You are the assistant in Curiosity, a robot simulator. You control a simulated robot with real \
+        physics (gravity, collisions, friction, force-limited motors) through tools. The user asks you \
+        for tasks in natural language; you turn them into movements.
 
-        Robot: \(robotName) (modelo «\(model.name)»), \(model.links.count) piezas, base \(model.floating ? "libre (puede caerse)" : "fija").
-        Articulaciones con motor (las únicas que puedes mandar):
+        Robot: \(robotName) (model "\(model.name)"), \(model.links.count) parts, \(model.floating ? "free base (it can fall over)" : "fixed base").
+        Motorized joints (the only ones you can command):
         \(joints)\(passive(model))
-        Cámaras montadas: \(cameras).
+        Mounted cameras: \(cameras).
 
-        Cómo trabajar:
-        - Antes de mover, mira (look) y lee el estado (get_state) si no sabes dónde está todo.
-        - Mueve en pasos cortos y comprueba el resultado; corrige si no llegó.
-        - El marco es el de la base del robot: z hacia arriba, en centímetros. Las articulaciones se \
-        mandan en grados (o centímetros si se deslizan) y nunca fuera de sus límites.
-        - Esto es una simulación: no hay riesgo físico, pero explica en una frase qué vas a hacer.
-        - Responde en el idioma de la persona, breve y sin tecnicismos innecesarios.
+        How to work:
+        - Before moving, look (look) and read the state (get_state) if you don't know where everything is.
+        - Move in short steps and check the result; correct it if it didn't get there.
+        - The frame is the robot base frame: z up, in centimeters. Joints are commanded in degrees \
+        (or centimeters if they slide) and never outside their limits.
+        - This is a simulation: there's no physical risk, but explain in one sentence what you're going to do.
+        - Reply in the user's language, briefly and without unnecessary jargon.
         """
     }
 
     private static func passive(_ model: RobotModel) -> String {
         let rest = model.joints.filter { !$0.actuated }
         guard !rest.isEmpty else { return "" }
-        let list = rest.map { j in j.mimic.map { m in "\(j.name) (sigue a \(m))" } ?? "\(j.name) (sin motor)" }
-        return "\nSe mueven solas: " + list.joined(separator: ", ") + "."
+        let list = rest.map { j in j.mimic.map { m in "\(j.name) (follows \(m))" } ?? "\(j.name) (no motor)" }
+        return "\nMove on their own: " + list.joined(separator: ", ") + "."
     }
 
     // MARK: - Estado para la IA
@@ -128,17 +128,17 @@ enum AgentTools {
     /// Una frase corta para mostrar en el chat lo que hace cada herramienta.
     static func title(for name: String, input: [String: Any]) -> String {
         switch name {
-        case "get_state": return "Leyendo el estado"
+        case "get_state": return "Reading the state"
         case "move_joints":
             let targets = (input["targets"] as? [[String: Any]] ?? [])
                 .map { "\($0["joint"] ?? "") → \(round1(($0["value"] as? NSNumber)?.doubleValue ?? 0))" }
-            return "Moviendo " + (targets.isEmpty ? "el robot" : targets.joined(separator: ", "))
+            return "Moving " + (targets.isEmpty ? "the robot" : targets.joined(separator: ", "))
         case "look":
             let cam = input["camera"] as? String ?? ""
-            return cam.isEmpty ? "Mirando la escena" : "Mirando desde «\(cam)»"
-        case "add_object": return "Poniendo un objeto (\(input["shape"] as? String ?? ""))"
-        case "remove_object": return "Quitando el objeto \(input["id"] ?? "")"
-        case "reset": return "Volviendo a la pose inicial"
+            return cam.isEmpty ? "Looking at the scene" : "Looking from \"\(cam)\""
+        case "add_object": return "Adding an object (\(input["shape"] as? String ?? ""))"
+        case "remove_object": return "Removing object \(input["id"] ?? "")"
+        case "reset": return "Returning to the starting pose"
         default: return name
         }
     }

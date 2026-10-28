@@ -35,30 +35,30 @@ struct RobotOverview: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.xxl) {
-                section("Tareas", help: "Cada tarea tiene sus demostraciones, su entrenamiento y su prueba.") {
+                section("Tasks", help: "Each task has its own demonstrations, training and run.") {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: Theme.Space.m)], spacing: Theme.Space.m) {
                         ForEach(tasks) { t in TaskCard(task: t) { onOpenTask(t.id) } }
                         NewTaskCard(action: onNewTask)
                     }
                 }
-                section("Datos", help: "Todas las demostraciones de esta Mac: las que grabaste y las bajadas de Hugging Face.") {
+                section("Data", help: "All the demonstrations on this Mac: the ones you recorded and the ones downloaded from Hugging Face.") {
                     if datasets.isEmpty {
-                        empty("Aún no hay demostraciones. Se crean al grabar una tarea.")
+                        empty("No demonstrations yet. They’re created when you record a task.")
                     } else {
                         rows(datasets) { d in
                             row(icon: .dataset, title: d.name,
-                                detail: "\(d.episodes) demostraciones · \(ByteCountFormatter.string(fromByteCount: Int64(d.bytes), countStyle: .file)) · \(d.source == "hub" ? "Hugging Face" : "grabado aquí")") {
+                                detail: "\(d.episodes) demonstrations · \(ByteCountFormatter.string(fromByteCount: Int64(d.bytes), countStyle: .file)) · \(d.source == "hub" ? "Hugging Face" : "recorded here")") {
                                 Button { onRevealDataset(d) } label: { Icon(name: .eye) }
-                                    .buttonStyle(.borderless).help("Mostrar en Finder")
+                                    .buttonStyle(.borderless).help("Show in Finder")
                                 Button { onDeleteDataset(d) } label: { Icon(name: .trash) }
-                                    .buttonStyle(.borderless).help("Borrar estas demostraciones")
+                                    .buttonStyle(.borderless).help("Delete these demonstrations")
                             }
                         }
                     }
                 }
-                section("Lo que aprendió", help: "Los modelos entrenados. Pruébalos en el robot cuando quieras.") {
+                section("What it learned", help: "The trained models. Run them on the robot whenever you like.") {
                     if models.isEmpty {
-                        empty("Todavía nada. Aparece aquí cuando termines de entrenar una tarea.")
+                        empty("Nothing yet. Models show up here once you finish training a task.")
                     } else {
                         rows(models) { m in
                             row(icon: .model, title: m.title, detail: m.detail) {
@@ -74,14 +74,14 @@ struct RobotOverview: View {
                                 }
                                 .buttonStyle(.borderless)
                                 .font(.caption)
-                                .help("Ver el entrenamiento en vivo: progreso, curva de pérdida y registro")
+                                .help("Watch training live: progress, loss curve and log")
                                 if m.training {
                                     EmptyView()
                                 } else if m.ready {
-                                    Button("Probar") { onRunModel(m.id) }.disabled(!canRun)
-                                        .help(canRun ? "Que lo haga solo" : "Configura el follower y la cámara en Ajustes del robot")
+                                    Button("Run") { onRunModel(m.id) }.disabled(!canRun)
+                                        .help(canRun ? "Let it do it on its own" : "Set up the follower and camera in Robot settings")
                                 } else {
-                                    Text("Sin terminar").font(.caption).foregroundStyle(Theme.faint)
+                                    Text("Unfinished").font(.caption).foregroundStyle(Theme.faint)
                                 }
                             }
                         }
@@ -167,7 +167,7 @@ private struct NewTaskCard: View {
         Button(action: action) {
             VStack(spacing: Theme.Space.s) {
                 Icon(name: .add, size: 18)
-                Text("Nueva tarea").font(.callout)
+                Text("New task").font(.callout)
             }
             .foregroundStyle(hovering ? Theme.ink : Theme.muted)
             .frame(maxWidth: .infinity, minHeight: 130)

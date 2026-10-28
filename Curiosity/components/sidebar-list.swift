@@ -34,7 +34,7 @@ struct SidebarList: View {
         // Encabezado y filas comparten los mismos márgenes: la fila empieza donde empieza «Robots»
         // y termina donde termina el +.
         List {
-            SidebarHeader(title: "Simulación", help: "Abrir simulador", collapsed: isCollapsed("sim"), onToggle: { toggle("sim") }, onAdd: onAdd)
+            SidebarHeader(title: "Simulation", help: "Open simulator", collapsed: isCollapsed("sim"), onToggle: { toggle("sim") }, onAdd: onAdd)
                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 6, trailing: 0))
                 .listRowBackground(Color.clear)
                 .selectionDisabled()
@@ -43,28 +43,28 @@ struct SidebarList: View {
                     .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
                     .listRowBackground(Color.clear)
                     .contextMenu {
-                        Button("Mostrar en Finder") { onReveal(robot) }
+                        Button("Show in Finder") { onReveal(robot) }
                         Divider()
-                        Button("Quitar de la lista", role: .destructive) { onRemove(robot) }
+                        Button("Remove from list", role: .destructive) { onRemove(robot) }
                     }
             } }
 
-            SidebarHeader(title: "Robots conectados", help: "Conectar robot externo", collapsed: isCollapsed("devices"), onToggle: { toggle("devices") }, onAdd: onConnect)
+            SidebarHeader(title: "Connected robots", help: "Connect external robot", collapsed: isCollapsed("devices"), onToggle: { toggle("devices") }, onAdd: onConnect)
                 .listRowInsets(EdgeInsets(top: 20, leading: 0, bottom: 6, trailing: 0))
                 .listRowBackground(Color.clear)
                 .selectionDisabled()
             if !isCollapsed("devices") { ForEach(devices) { device in
                 SidebarRow(icon: .link, title: device.name.isEmpty ? (device.guess ?? "SO-101") : device.name,
-                           subtitle: !connectedPorts.contains(device.id) ? "Desenchufado"
-                                     : device.leaderPort == nil ? "Enchufado" : "Enchufado · con leader",
+                           subtitle: !connectedPorts.contains(device.id) ? "Unplugged"
+                                     : device.leaderPort == nil ? "Plugged in" : "Plugged in · with leader",
                            selected: device.id == selectedDeviceID && selectedTaskID == nil,
                            disclosure: isCollapsed(device.id) ? .closed : .open, onDisclose: { toggle(device.id) }) { onSelectDevice(device) }
                     .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
                     .listRowBackground(Color.clear)
                     .contextMenu {
-                        Button("Nueva tarea…") { onNewTask(device) }
+                        Button("New task…") { onNewTask(device) }
                         Divider()
-                        Button("Quitar de la lista", role: .destructive) { onRemoveDevice(device) }
+                        Button("Remove from list", role: .destructive) { onRemoveDevice(device) }
                     }
                 if !isCollapsed(device.id) {
                 ForEach(tasks[device.id] ?? []) { task in
@@ -72,9 +72,9 @@ struct SidebarList: View {
                                selected: task.id == selectedTaskID, compact: true, indent: 22) { onSelectTask(device, task.id) }
                         .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
                         .listRowBackground(Color.clear)
-                        .contextMenu { Button("Quitar tarea", role: .destructive) { onRemoveTask(task.id) } }
+                        .contextMenu { Button("Remove task", role: .destructive) { onRemoveTask(task.id) } }
                 }
-                SidebarRow(icon: .add, title: "Nueva tarea", subtitle: nil, selected: false, compact: true, muted: true, indent: 22) { onNewTask(device) }
+                SidebarRow(icon: .add, title: "New task", subtitle: nil, selected: false, compact: true, muted: true, indent: 22) { onNewTask(device) }
                     .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 8, trailing: 0))
                     .listRowBackground(Color.clear)
                 }
@@ -113,7 +113,7 @@ private struct SidebarHeader: View {
             .buttonStyle(.plain)
             .foregroundStyle(Theme.muted)
             .onHover { hoveringTitle = $0 }
-            .help(collapsed ? "Mostrar" : "Ocultar")
+            .help(collapsed ? "Show" : "Hide")
             Spacer()
             if let onAdd { Button(action: onAdd) {
                 Icon(name: .add, size: 13, weight: .semibold)
@@ -165,7 +165,7 @@ private struct SidebarRow: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(Theme.muted)
                     .opacity(hovering || disclosure == .closed ? 1 : 0)
-                    .help(disclosure == .open ? "Ocultar tareas" : "Mostrar tareas")
+                    .help(disclosure == .open ? "Hide tasks" : "Show tasks")
                 }
             }
             .foregroundStyle(muted ? Theme.muted : Theme.ink)
@@ -197,6 +197,6 @@ private func origin(_ robot: Robot) -> String {
     switch robot.source {
     case .bundled: "Default"
     case .library: robot.summary
-    case .file: "Importado"
+    case .file: "Imported"
     }
 }

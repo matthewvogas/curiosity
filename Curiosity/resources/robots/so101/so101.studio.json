@@ -1,6 +1,6 @@
 {
   "name": "SO-101",
-  "description": "Brazo de 6 articulaciones de TheRobotStudio y Hugging Face (LeRobot).",
+  "description": "6-joint arm by TheRobotStudio and Hugging Face (LeRobot).",
   "license": "Apache-2.0 · TheRobotStudio/SO-ARM100",
   "actuators": {
     "shoulder_pan": {
@@ -24,7 +24,7 @@
   },
   "cameras": [
     {
-      "name": "Muñeca",
+      "name": "Wrist",
       "link": "gripper_link",
       "pos": [
         -0.00296,

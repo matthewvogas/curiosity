@@ -18,56 +18,56 @@ struct SettingsScreen: View {
                                 Label(r.message, systemImage: (r.ok ? IconName.check : IconName.warning).rawValue)
                                     .foregroundStyle(r.ok ? Theme.green : Theme.red).lineLimit(2)
                             } else {
-                                Text("Key guardada").foregroundStyle(Theme.muted)
+                                Text("Key saved").foregroundStyle(Theme.muted)
                             }
-                            Button("Probar") { Task { await settings.testConnection() } }
-                            Button("Quitar", role: .destructive) { settings.removeAnthropicKey() }
+                            Button("Test") { Task { await settings.testConnection() } }
+                            Button("Remove", role: .destructive) { settings.removeAnthropicKey() }
                         }
                     }
                 } else {
                     LabeledContent("Anthropic") {
                         HStack {
                             SecureField("sk-ant-…", text: $keyDraft).frame(minWidth: 220)
-                            Button("Guardar") { settings.saveAnthropicKey(keyDraft); keyDraft = "" }
+                            Button("Save") { settings.saveAnthropicKey(keyDraft); keyDraft = "" }
                                 .disabled(keyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
                     }
                 }
-                Picker("Modelo", selection: $settings.modelID) {
+                Picker("Model", selection: $settings.modelID) {
                     ForEach(AIModel.all) { m in Text(m.name).tag(m.id) }
                 }
-                Picker("Cuánto piensa", selection: $settings.effort) {
-                    Text("Poco (más rápido)").tag("low")
+                Picker("Thinking effort", selection: $settings.effort) {
+                    Text("Low (faster)").tag("low")
                     Text("Normal").tag("medium")
-                    Text("Mucho (tareas difíciles)").tag("high")
+                    Text("High (hard tasks)").tag("high")
                 }
             } header: {
                 Text("Claude")
             } footer: {
-                Text("La key se guarda en el Llavero de tu Mac y solo se envía a api.anthropic.com. Consíguela en console.anthropic.com.")
+                Text("The key is stored in your Mac's Keychain and only sent to api.anthropic.com. Get one at console.anthropic.com.")
                     .foregroundStyle(Theme.muted)
             }
 
             Section {
-                TextField("Python de LeRobot", text: $settings.lerobotPython)
+                TextField("LeRobot Python", text: $settings.lerobotPython)
                 LabeledContent("Hugging Face") {
                     if settings.hasHubToken {
                         HStack {
-                            Text("Token guardado").foregroundStyle(Theme.muted)
-                            Button("Quitar", role: .destructive) { settings.removeHubToken() }
+                            Text("Token saved").foregroundStyle(Theme.muted)
+                            Button("Remove", role: .destructive) { settings.removeHubToken() }
                         }
                     } else {
                         HStack {
                             SecureField("hf_…", text: $hubDraft).frame(minWidth: 220)
-                            Button("Guardar") { settings.saveHubToken(hubDraft); hubDraft = "" }
+                            Button("Save") { settings.saveHubToken(hubDraft); hubDraft = "" }
                                 .disabled(hubDraft.trimmingCharacters(in: .whitespaces).isEmpty)
                         }
                     }
                 }
             } header: {
-                Text("Robots conectados")
+                Text("Connected robots")
             } footer: {
-                Text("Para teleoperar, grabar y entrenar, la app usa tu instalación de LeRobot. El token de Hugging Face (huggingface.co/settings/tokens, con permiso de escritura) sirve para subir datasets y bajar los privados; se guarda en el Llavero.")
+                Text("To teleoperate, record and train, the app uses your LeRobot install. The Hugging Face token (huggingface.co/settings/tokens, with write access) lets you upload datasets and download private ones; it's stored in the Keychain.")
                     .foregroundStyle(Theme.muted)
             }
         }

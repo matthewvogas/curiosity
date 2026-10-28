@@ -10,9 +10,9 @@ enum AnthropicQueries {
         var message: String
         var errorDescription: String? {
             switch status {
-            case 401: "La API key no es válida. Revísala en Ajustes."
-            case 429: "Demasiadas solicitudes por ahora. Espera un momento y vuelve a intentar."
-            case 529, 500...599: "El servicio de Claude no responde en este momento. Intenta de nuevo."
+            case 401: "The API key isn't valid. Check it in Settings."
+            case 429: "Too many requests right now. Wait a moment and try again."
+            case 529, 500...599: "Claude isn't responding right now. Try again."
             default: message
             }
         }

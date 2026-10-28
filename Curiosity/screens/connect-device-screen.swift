@@ -11,41 +11,41 @@ struct ConnectDeviceScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                Text("Conectar SO-101").font(.title2.weight(.semibold))
-                Text("Enchufa los dos brazos por USB y enciende sus fuentes. Elige cuál es cuál.")
+                Text("Connect SO-101").font(.title2.weight(.semibold))
+                Text("Plug both arms in over USB and turn on their power supplies. Then pick which is which.")
                     .font(.callout).foregroundStyle(Theme.muted)
             }
 
             if devices.available.isEmpty {
                 HStack(spacing: Theme.Space.s) {
                     ProgressView().controlSize(.small)
-                    Text("Buscando brazos enchufados…").font(.callout).foregroundStyle(Theme.muted)
+                    Text("Looking for plugged-in arms…").font(.callout).foregroundStyle(Theme.muted)
                 }
             } else {
                 Form {
-                    Picker("Follower (el que trabaja)", selection: $follower) {
-                        Text("Elige…").tag(String?.none)
+                    Picker("Follower (the one that works)", selection: $follower) {
+                        Text("Choose…").tag(String?.none)
                         ForEach(devices.available, id: \.self) { Text(short($0)).tag(String?.some($0)) }
                     }
-                    Picker("Leader (el que mueves)", selection: $leader) {
-                        Text("Sin leader").tag(String?.none)
+                    Picker("Leader (the one you move)", selection: $leader) {
+                        Text("No leader").tag(String?.none)
                         ForEach(devices.available.filter { $0 != follower }, id: \.self) { Text(short($0)).tag(String?.some($0)) }
                     }
                 }
                 .formStyle(.grouped)
                 .scrollDisabled(true)
                 .frame(height: 120)
-                Text("¿Cuál es cuál? Desenchufa un brazo: el puerto que desaparece es el suyo.")
+                Text("Which is which? Unplug one arm: the port that disappears belongs to it.")
                     .font(.caption).foregroundStyle(Theme.muted)
             }
 
-            OptionCard(icon: .robot, title: "Otros robots", detail: "Koch, LeKiwi, OpenArm y más.",
-                       badge: "Próximamente", enabled: false) {}
+            OptionCard(icon: .robot, title: "Other robots", detail: "Koch, LeKiwi, OpenArm and more.",
+                       badge: "Coming soon", enabled: false) {}
 
             HStack {
-                Button("Cancelar") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Agregar") {
+                Button("Add") {
                     if let follower { devices.add(follower: follower, leader: leader) }
                     dismiss()
                 }

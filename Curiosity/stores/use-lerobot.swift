@@ -74,7 +74,7 @@ final class UseLeRobot {
         if status != .ready { await start() }
         guard await PermissionQueries.camera() else {
             return ([PreflightCheck(key: "permission", state: .fail,
-                                    detail: "Curiosity no tiene permiso para usar la cámara. Actívalo en Ajustes del Sistema.")], nil)
+                                    detail: "Curiosity doesn't have permission to use the camera. Turn it on in System Settings.")], nil)
         }
         var args = base(d).merging(["camera": camera(d)]) { $1 }
         if withLeader { args.merge(leader(d)) { $1 } }
@@ -159,7 +159,7 @@ final class UseLeRobot {
             return (c, d)
         }
         guard !photos.isEmpty else {
-            throw NSError(domain: "Curiosity", code: 8, userInfo: [NSLocalizedDescriptionKey: "Las cámaras no entregaron imagen."])
+            throw NSError(domain: "Curiosity", code: 8, userInfo: [NSLocalizedDescriptionKey: "The cameras didn't send an image."])
         }
         return photos
     }

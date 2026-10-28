@@ -33,9 +33,9 @@ struct LibraryCard: View {
                 if let progress {
                     ProgressView(value: progress).progressViewStyle(.linear).controlSize(.small)
                 } else if added {
-                    Text("En mis robots").font(.caption.weight(.medium)).foregroundStyle(Theme.muted)
+                    Text("In my robots").font(.caption.weight(.medium)).foregroundStyle(Theme.muted)
                 } else {
-                    Button("Agregar", action: onAdd).buttonStyle(.link).font(.callout.weight(.medium))
+                    Button("Add", action: onAdd).buttonStyle(.link).font(.callout.weight(.medium))
                 }
             }
             .frame(height: 18, alignment: .leading)

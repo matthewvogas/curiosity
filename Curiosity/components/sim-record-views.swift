@@ -13,18 +13,18 @@ struct SimRecordSheet: View {
     var body: some View {
         Form {
             Section {
-                TextField("Tarea", text: $task, prompt: Text("Pon el cubo rojo dentro de la caja"))
-                Stepper("\(episodes) demostraciones", value: $episodes, in: 1...200, step: 5)
-                Stepper("Hasta \(Int(seconds)) s cada una", value: $seconds, in: 5...300, step: 5)
+                TextField("Task", text: $task, prompt: Text("Put the red cube in the box"))
+                Stepper("\(episodes) demonstrations", value: $episodes, in: 1...200, step: 5)
+                Stepper("Up to \(Int(seconds)) s each", value: $seconds, in: 5...300, step: 5)
                 if leaders.count > 1 {
                     Picker("Leader", selection: $leaderID) {
                         ForEach(leaders) { Text($0.name.isEmpty ? ($0.guess ?? "SO-101") : $0.name).tag(String?.some($0.id)) }
                     }
                 }
             } header: {
-                Text("Grabar en la simulación")
+                Text("Record in the simulation")
             } footer: {
-                Text("Mueves tu leader y el robot simulado lo copia; se graba su cámara y sus movimientos como un dataset de LeRobot (para entrenar o para «Saber»). El brazo real no se conecta. Teclas: → terminar, ← repetir, Esc guardar.")
+                Text("You move your leader and the simulated robot copies it; its camera and movements are recorded as a LeRobot dataset (to train or for Knowledge). The real arm isn't connected. Keys: → done, ← redo, Esc save.")
                     .foregroundStyle(Theme.muted)
             }
         }
@@ -32,8 +32,8 @@ struct SimRecordSheet: View {
         .safeAreaInset(edge: .bottom) {
             HStack {
                 Spacer()
-                Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
-                Button("Grabar") {
+                Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction)
+                Button("Record") {
                     if let d = leaders.first(where: { $0.id == leaderID }) ?? leaders.first {
                         onStart(d, task.trimmingCharacters(in: .whitespaces), episodes, seconds)
                     }
@@ -66,12 +66,12 @@ struct SimRecordBar: View {
                 }
             }
             Divider().frame(height: 24)
-            Button("Repetir", action: onRedo).keyboardShortcut(.leftArrow, modifiers: [])
+            Button("Redo", action: onRedo).keyboardShortcut(.leftArrow, modifiers: [])
                 .disabled(session.phase != "recording").help("←")
-            Button(session.phase == "reset" ? "Siguiente" : "Terminé", action: onNext)
+            Button(session.phase == "reset" ? "Next" : "Done", action: onNext)
                 .buttonStyle(.borderedProminent).keyboardShortcut(.rightArrow, modifiers: [])
                 .disabled(!(session.phase == "recording" || session.phase == "reset")).help("→")
-            Button("Guardar", action: onStop).keyboardShortcut(.escape, modifiers: []).help("Esc")
+            Button("Save", action: onStop).keyboardShortcut(.escape, modifiers: []).help("Esc")
         }
         .padding(.horizontal, Theme.Space.l)
         .padding(.vertical, Theme.Space.m)
@@ -80,10 +80,10 @@ struct SimRecordBar: View {
 
     private var title: String {
         switch session.phase {
-        case "starting": "Conectando el leader…"
-        case "recording": "Demostración \(session.episode + 1) de \(session.target)"
-        case "reset": "Acomoda la escena"
-        case "saving": "Guardando…"
+        case "starting": "Connecting the leader…"
+        case "recording": "Demonstration \(session.episode + 1) of \(session.target)"
+        case "reset": "Reset the scene"
+        case "saving": "Saving…"
         default: ""
         }
     }

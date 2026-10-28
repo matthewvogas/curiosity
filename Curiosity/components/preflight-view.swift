@@ -24,7 +24,7 @@ struct PreflightView: View {
             HStack(alignment: .top, spacing: Theme.Space.l) {
                 VStack(alignment: .leading, spacing: Theme.Space.m) {
                     if checking && checks.isEmpty {
-                        HStack(spacing: Theme.Space.s) { ProgressView().controlSize(.small); Text("Revisando cada pieza…").foregroundStyle(Theme.muted) }
+                        HStack(spacing: Theme.Space.s) { ProgressView().controlSize(.small); Text("Checking each part…").foregroundStyle(Theme.muted) }
                     }
                     ForEach(checks) { c in
                         HStack(alignment: .top, spacing: Theme.Space.s) {
@@ -33,7 +33,7 @@ struct PreflightView: View {
                                 Text(c.title)
                                 Text(c.detail).font(.callout).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
                                 if c.state == .fail {
-                                    Button(c.key == "permission" ? "Abrir Ajustes del Sistema" : "Ajustes del robot",
+                                    Button(c.key == "permission" ? "Open System Settings" : "Robot settings",
                                            action: c.key == "permission" ? onOpenPrivacy : onFix)
                                         .buttonStyle(.link).font(.callout)
                                 }
@@ -60,9 +60,9 @@ struct PreflightView: View {
             }
 
             HStack {
-                Button("Revisar de nuevo", action: onRetry).disabled(checking)
+                Button("Check again", action: onRetry).disabled(checking)
                 Spacer()
-                Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
+                Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction)
                 Button(startTitle, action: onStart)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)

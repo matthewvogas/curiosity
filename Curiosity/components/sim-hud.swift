@@ -11,11 +11,11 @@ struct SimHUD: View {
         HStack(spacing: Theme.Space.m) {
             HStack(spacing: 6) {
                 Circle().fill(paused ? Theme.yellow : Theme.green).frame(width: 7, height: 7)
-                Text(paused ? "En pausa" : "Simulando").font(.caption.weight(.semibold))
+                Text(paused ? "Paused" : "Running").font(.caption.weight(.semibold))
             }
             Text(String(format: "%.1f s", time)).monospacedDigit()
-            Text(String(format: "%.2f×", realTimeFactor)).monospacedDigit().help("Velocidad respecto al tiempo real")
-            Text("\(contacts) contactos").monospacedDigit()
+            Text(String(format: "%.2f×", realTimeFactor)).monospacedDigit().help("Speed relative to real time")
+            Text("\(contacts) contacts").monospacedDigit()
         }
         .font(.caption)
         .foregroundStyle(Theme.ink.opacity(0.85))

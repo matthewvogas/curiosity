@@ -16,10 +16,10 @@ struct LiveControls: View {
                 HStack {
                     Text("Control").font(.headline)
                     Spacer()
-                    Button("Pose del principio", action: onHome).buttonStyle(.link)
-                        .help("Vuelve despacio a la pose en que estaba al conectarlo")
+                    Button("Starting pose", action: onHome).buttonStyle(.link)
+                        .help("Slowly returns to the pose it was in when connected")
                 }
-                Text("El robot va despacio hacia donde marques.").font(.caption).foregroundStyle(Theme.muted)
+                Text("The robot moves slowly to where you set it.").font(.caption).foregroundStyle(Theme.muted)
                 ForEach(joints, id: \.self) { j in
                     if let range = limits[j] {
                         VStack(alignment: .leading, spacing: 2) {
@@ -27,7 +27,7 @@ struct LiveControls: View {
                                 Text(j).lineLimit(1)
                                 Spacer()
                                 Text(RealAgentTools.format(positions[j] ?? 0, j)).monospacedDigit().foregroundStyle(Theme.muted)
-                                    .help("Dónde está ahora")
+                                    .help("Where it is now")
                             }
                             Slider(value: Binding(get: { targets[j] ?? 0 }, set: { onChange(j, $0) }), in: range)
                                 .controlSize(.small)

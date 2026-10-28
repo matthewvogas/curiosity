@@ -110,7 +110,7 @@ async function loadMesh(file, base, url = null) {
     meshCache.set(key, (async () => {
       const hit = await fetchFirst(url ? [url] : candidates(file, base));
       file = file || url;
-      if (!hit) throw new Error(`No encuentro la malla ${file}`);
+      if (!hit) throw new Error(`Can't find the mesh ${file}`);
       const ext = file.split(".").pop().toLowerCase();
       if (ext === "stl") {
         const g = new STLLoader().parse(hit.buf);
@@ -124,7 +124,7 @@ async function loadMesh(file, base, url = null) {
         dae.scene.rotation.set(0, 0, 0);  // el URDF ya trae su orientación
         return dae.scene;
       }
-      throw new Error(`Formato de malla no soportado: .${ext}`);
+      throw new Error(`Unsupported mesh format: .${ext}`);
     })());
   }
   return (await meshCache.get(key)).clone(true);
@@ -177,7 +177,7 @@ async function buildModel(im, base, profile, native) {
   const links = new Map(im.links.map((l) => [l.name, l]));
   const childOf = new Set(im.joints.map((j) => j.child));
   const rootLink = im.links.find((l) => !childOf.has(l.name))?.name;
-  if (!rootLink) throw new Error("El modelo no tiene una pieza raíz.");
+  if (!rootLink) throw new Error("The model has no root link.");
   const decomposeParts = profile?.collision?.maxParts ?? 8;
   const byParent = new Map();
   for (const j of im.joints) { if (!byParent.has(j.parent)) byParent.set(j.parent, []); byParent.get(j.parent).push(j); }
@@ -250,7 +250,7 @@ async function buildModel(im, base, profile, native) {
     group.add(com);
     out.links.set(name, { name, group, com, virtual: !!l.virtual, body: -1 });
   }
-  if (decomposed) warnings.push(`${decomposed} piezas cóncavas se partieron en varias formas convexas para chocar mejor`);
+  if (decomposed) warnings.push(`${decomposed} concave links were split into convex shapes for better collisions`);
 
   // Articulaciones que se muestran y se mandan.
   for (const j of im.joints) {
@@ -716,9 +716,9 @@ window.studio = {
   },
   async loadNow({ url, profile = {} }, token) {
     try {
-      post({ type: "loading", text: "Leyendo el modelo…" });
+      post({ type: "loading", text: "Reading the model…" });
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`No se pudo leer ${url}`);
+      if (!res.ok) throw new Error(`Couldn't read ${url}`);
       const text = await res.text();
       const native = /<mujoco[\s>]/.test(text);
       const im = native ? await parseMJCF(text, url) : parseURDF(text);
@@ -726,7 +726,7 @@ window.studio = {
       clearScene();
       Object.assign(params, profile.physics || {});
       simTime = 0;
-      post({ type: "loading", text: `Armando ${im.links.filter((l) => !l.virtual).length} piezas…` });
+      post({ type: "loading", text: `Building ${im.links.filter((l) => !l.virtual).length} links…` });
       const built = await buildModel(im, url.slice(0, url.lastIndexOf("/")), profile, native);
       if (token !== currentLoad) return;
       model = built;
@@ -745,7 +745,7 @@ window.studio = {
         files = { dir, robot: "cu_robot.xml" };
       }
       if (token !== currentLoad) return;
-      post({ type: "loading", text: "Compilando con MuJoCo…" });
+      post({ type: "loading", text: "Compiling with MuJoCo…" });
       for (const o of profile.scene?.objects || []) makeObject(o);
       compileScene();
 
@@ -769,7 +769,7 @@ window.studio = {
         warnings: built.warnings,
       });
     } catch (e) {
-      post({ type: "error", text: typeof e === "number" ? "MuJoCo no pudo compilar el modelo." : e.message });
+      post({ type: "error", text: typeof e === "number" ? "MuJoCo couldn't compile the model." : e.message });
     }
   },
   setTarget(name, value) { const j = model?.joints.find((x) => x.name === name); if (j?.actuated) j.target = value; },
@@ -906,5 +906,5 @@ try {
   setup();
   post({ type: "ready" });
 } catch (e) {
-  post({ type: "error", text: `No se pudo iniciar el motor: ${e.message}` });
+  post({ type: "error", text: `Couldn't start the engine: ${e.message}` });
 }

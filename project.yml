@@ -37,11 +37,11 @@ targets:
       path: Curiosity/resources/Info.plist
       properties:
         CFBundleDisplayName: Curiosity
-        CFBundleDevelopmentRegion: es
+        CFBundleDevelopmentRegion: en
         LSApplicationCategoryType: public.app-category.developer-tools
         LSMinimumSystemVersion: "26.0"
         NSHumanReadableCopyright: "Rosvelt · Curiosity"
-        NSCameraUsageDescription: "Curiosity usa la cámara del robot para grabar demostraciones y para que el robot vea mientras hace una tarea."
+        NSCameraUsageDescription: "Curiosity uses the robot's camera to record demonstrations and so the robot can see while it does a task."
     # Con el runtime endurecido, la cámara necesita este permiso además de NSCameraUsageDescription.
     entitlements:
       path: Curiosity/curiosity.entitlements

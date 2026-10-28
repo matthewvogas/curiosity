@@ -17,8 +17,8 @@ struct KnowledgePanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.l) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Saber").font(.headline)
-                    Text("La IA estudia demostraciones y escribe cómo se hace la tarea: etapas, poses y tramos que puede repetir en el robot. Sin entrenar.")
+                    Text("Knowledge").font(.headline)
+                    Text("The AI studies demonstrations and writes down how the task is done: stages, poses and segments it can replay on the robot. No training.")
                         .font(.caption).foregroundStyle(Theme.muted)
                 }
 
@@ -26,15 +26,15 @@ struct KnowledgePanel: View {
                     HStack(spacing: Theme.Space.s) { ProgressView().controlSize(.small); Text(studying).font(.callout) }
                 } else {
                     Menu {
-                        Section("En esta Mac") {
+                        Section("On this Mac") {
                             ForEach(localDatasets.filter { $0.episodes > 0 }) { d in
                                 Button("\(d.name) · \(d.episodes) demos") { onStudy(d) }
                             }
                         }
                         Divider()
-                        Button("Buscar en Hugging Face…", action: onSearchHub)
+                        Button("Search Hugging Face…", action: onSearchHub)
                     } label: {
-                        Label("Estudiar demostraciones", systemImage: "book")
+                        Label("Study demonstrations", systemImage: "book")
                     }
                     .menuStyle(.button)
                     .buttonStyle(.borderedProminent)
@@ -70,19 +70,19 @@ private struct PackageCard: View {
                     Text(package.source).font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
                 }
                 Spacer()
-                Toggle("Usar", isOn: Binding(get: { active }, set: { _ in onToggle() }))
+                Toggle("Use", isOn: Binding(get: { active }, set: { _ in onToggle() }))
                     .toggleStyle(.switch).controlSize(.mini).labelsHidden()
-                    .help(active ? "La IA lo está usando en el chat" : "Que la IA lo use en el chat")
+                    .help(active ? "The AI is using it in the chat" : "Let the AI use it in the chat")
             }
             Text(package.summary).font(.caption).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
             if expanded {
-                section("Etapas", package.stages.enumerated().map { "\($0.offset + 1). \($0.element.name) — \($0.element.check)" })
-                section("Poses", package.poses.map { "«\($0.name)» \($0.note)" })
-                section("Tramos", package.segments.map { "«\($0.name)» demo \($0.episode), \($0.from)–\($0.to) s" })
-                if !package.tips.isEmpty { section("Consejos", package.tips) }
-                Button("Quitar", role: .destructive, action: onRemove).buttonStyle(.link).font(.caption)
+                section("Stages", package.stages.enumerated().map { "\($0.offset + 1). \($0.element.name) — \($0.element.check)" })
+                section("Poses", package.poses.map { "\"\($0.name)\" \($0.note)" })
+                section("Segments", package.segments.map { "\"\($0.name)\" demo \($0.episode), \($0.from)–\($0.to) s" })
+                if !package.tips.isEmpty { section("Tips", package.tips) }
+                Button("Remove", role: .destructive, action: onRemove).buttonStyle(.link).font(.caption)
             }
-            Button(expanded ? "Menos" : "Ver todo") { withAnimation(.snappy) { expanded.toggle() } }
+            Button(expanded ? "Less" : "Show all") { withAnimation(.snappy) { expanded.toggle() } }
                 .buttonStyle(.link).font(.caption)
         }
         .padding(Theme.Space.m)

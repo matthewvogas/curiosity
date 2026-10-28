@@ -43,10 +43,10 @@ struct DeviceScreen: View {
             }
             .sheet(isPresented: Binding(get: { preflightFor != nil }, set: { if !$0 { preflightFor = nil } })) {
                 PreflightView(
-                    title: preflightFor == .record ? "Antes de grabar" : preflightFor == .live ? "Antes de conectar" : "Antes de probar",
+                    title: preflightFor == .record ? "Before recording" : preflightFor == .live ? "Before connecting" : "Before running",
                     checks: checks, picture: checkPicture, checking: checking,
                     warning: preflightFor.map(message) ?? "",
-                    startTitle: preflightFor == .record ? "Empezar a grabar" : preflightFor == .live ? "Conectar" : "Probar en el robot",
+                    startTitle: preflightFor == .record ? "Start recording" : preflightFor == .live ? "Connect" : "Run on the robot",
                     onRetry: { if let a = preflightFor { check(a) } },
                     onStart: {
                         let action = preflightFor
@@ -63,15 +63,15 @@ struct DeviceScreen: View {
                     Task { await run(action) }
                 }
             } message: { Text(confirmMessage) }
-            .confirmationDialog("¿Borrar «\(deleting?.name ?? "")»?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
-                Button("Borrar", role: .destructive) {
+            .confirmationDialog("Delete “\(deleting?.name ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+                Button("Delete", role: .destructive) {
                     let d = deleting   // el diálogo borra `deleting` al cerrarse
                     Task { if let d { await datasets.delete(d) } }
                 }
             } message: {
                 Text(deleting?.source == "hub"
-                     ? "Se borra la copia en esta Mac; sigue en Hugging Face y se puede volver a bajar."
-                     : "Se borran sus \(deleting?.episodes ?? 0) demostraciones de esta Mac. No se puede deshacer. Los modelos ya entrenados no se tocan.")
+                     ? "This deletes the copy on this Mac. It stays on Hugging Face and can be downloaded again."
+                     : "This deletes its \(deleting?.episodes ?? 0) demonstrations from this Mac. This can’t be undone. Models already trained are kept.")
             }
     }
 
@@ -121,7 +121,7 @@ struct DeviceScreen: View {
     }
 
     private func jobDetail(_ job: TrainJob) -> String {
-        "\(policyName(job.policy)) · \(job.steps.formatted()) pasos · lote \(job.batchSize) · \(job.dataset)"
+        "\(policyName(job.policy)) · \(job.steps.formatted()) steps · batch \(job.batchSize) · \(job.dataset)"
     }
 
     private var overviewModels: [OverviewModel] {
@@ -129,7 +129,7 @@ struct DeviceScreen: View {
             let p = training.progress[j.name]
             let title = tasks.tasks.first { j.name == $0.trainName || j.name.hasPrefix($0.trainName + "_") }?.title ?? j.name
             return OverviewModel(id: j.name, title: title,
-                                 detail: "\(policyName(j.policy)) · \(j.steps.formatted()) pasos · \(j.dataset) · \(j.started.formatted(date: .abbreviated, time: .omitted))",
+                                 detail: "\(policyName(j.policy)) · \(j.steps.formatted()) steps · \(j.dataset) · \(j.started.formatted(date: .abbreviated, time: .omitted))",
                                  ready: p?.hasModel == true, training: p?.running == true,
                                  fraction: p?.running == true ? p?.fraction : nil)
         }
@@ -139,7 +139,7 @@ struct DeviceScreen: View {
         let s = status(task)
         let info = TaskPageInfo(
             demos: s.demos, hubDataset: task.hubDataset ? task.dataset : nil,
-            policies: PolicyOption.all.map { p in (p.id, p.needsSmolVLA && lerobot.env?.smolvla != true ? "\(p.name) (falta instalar)" : p.name) },
+            policies: PolicyOption.all.map { p in (p.id, p.needsSmolVLA && lerobot.env?.smolvla != true ? "\(p.name) (not installed)" : p.name) },
             progress: s.progress, hasModel: s.hasModel, eta: eta(task),
             canRecord: device.canRecord, canRun: device.canRunPolicy, busy: lerobot.isBusy, notice: notice)
         let actions = TaskPageActions(
@@ -169,35 +169,35 @@ struct DeviceScreen: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            Picker("Modo", selection: Binding(get: { live.isLive ? .live : mode }, set: { mode = $0 })) {
-                Text("Enseñar").tag(Mode.teach)
-                Text("En vivo").tag(Mode.live)
+            Picker("Mode", selection: Binding(get: { live.isLive ? .live : mode }, set: { mode = $0 })) {
+                Text("Teach").tag(Mode.teach)
+                Text("Live").tag(Mode.live)
             }
             .pickerStyle(.segmented)
             .disabled(live.isLive || (lerobot.isBusy && !live.isLive))
-            .help("Enseñarle tareas, o controlarlo ahora con el chat y los controles")
+            .help("Teach it tasks, or control it now with chat and the controls")
         }
         if live.isLive {
             ToolbarItem(placement: .primaryAction) {
-                Button { liveChat?.stop(); live.stop() } label: { Label("Soltar", systemImage: "stop.fill") }
+                Button { liveChat?.stop(); live.stop() } label: { Label("Release", systemImage: "stop.fill") }
                     .labelStyle(.titleAndIcon)
                     .disabled(live.isReturning)
-                    .help("Vuelve despacio a su pose del principio y suelta los motores")
+                    .help("Slowly returns to its starting pose and releases the motors")
             }
         }
         if device.leaderPort != nil && !live.isLive && mode == .teach { ToolbarItem(placement: .primaryAction) {
             if lerobot.session?.active == true && lerobot.session?.kind == "teleop" {
-                Button { lerobot.stop() } label: { Label("Dejar de mover", systemImage: "stop.fill") }
-                    .help("Suelta los motores del follower")
+                Button { lerobot.stop() } label: { Label("Stop moving", systemImage: "stop.fill") }
+                    .help("Releases the follower’s motors")
             } else {
-                Button { confirm = .teleop } label: { Label("Mover con el leader", systemImage: "hand.raised") }
+                Button { confirm = .teleop } label: { Label("Move with the leader", systemImage: "hand.raised") }
                     .disabled(!device.canTeleoperate || lerobot.isBusy)
-                    .help(device.canTeleoperate ? "Este robot copia a su leader. No graba nada." : "Elige la calibración del leader en Ajustes del robot")
+                    .help(device.canTeleoperate ? "This robot copies its leader. Nothing is recorded." : "Choose the leader’s calibration in Robot settings")
             }
         } }
         ToolbarItem(placement: .primaryAction) {
-            Button { showingSettings = true } label: { Label("Ajustes del robot", systemImage: IconName.settings.rawValue) }
-                .help("Conexión, brazos y cámara")
+            Button { showingSettings = true } label: { Label("Robot settings", systemImage: IconName.settings.rawValue) }
+                .help("Connection, arms and camera")
         }
     }
 
@@ -226,7 +226,7 @@ struct DeviceScreen: View {
                     onSnapshot: { Task { if let i = lerobot.mainCamera(device) { snapshot = await lerobot.snapshot(i) } } })
             }
             .formStyle(.grouped)
-            HStack { Spacer(); Button("Listo") { showingSettings = false }.keyboardShortcut(.defaultAction) }
+            HStack { Spacer(); Button("Done") { showingSettings = false }.keyboardShortcut(.defaultAction) }
                 .padding(Theme.Space.l)
         }
         .frame(width: 560, height: 620)
@@ -332,7 +332,7 @@ struct DeviceScreen: View {
     private func eta(_ task: TeachTask) -> String {
         // ACT en una Mac con chip M: ~0,6 s por paso (medido con el SO-101).
         let hours = Double(task.steps) * (task.policy == "act" ? 0.6 : 1.5) / 3600
-        return hours < 1 ? "menos de 1 h" : "unas \(Int(hours.rounded())) h"
+        return hours < 1 ? "under 1 h" : "about \(Int(hours.rounded())) h"
     }
 
     private func policyName(_ id: String) -> String { PolicyOption.all.first { $0.id == id }?.name ?? id.uppercased() }
@@ -340,35 +340,35 @@ struct DeviceScreen: View {
     private var notice: String? { training.message ?? lerobot.error ?? lerobotStatusError }
 
     private var lerobotStatusError: String? {
-        if case .failed(let reason) = lerobot.status { return "LeRobot no arrancó: \(reason)" }
+        if case .failed(let reason) = lerobot.status { return "LeRobot didn’t start: \(reason)" }
         return nil
     }
 
     private var subtitle: String {
-        if lerobot.status == .starting { return "Cargando LeRobot…" }
-        if lerobot.session?.active == true && lerobot.session?.kind == "teleop" { return "Moviendo con el leader" }
-        return devices.isConnected(device.id) ? (device.leaderPort == nil ? "Enchufado" : "Enchufado · con leader") : "Desenchufado"
+        if lerobot.status == .starting { return "Loading LeRobot…" }
+        if lerobot.session?.active == true && lerobot.session?.kind == "teleop" { return "Moving with the leader" }
+        return devices.isConnected(device.id) ? (device.leaderPort == nil ? "Plugged in" : "Plugged in · with leader") : "Unplugged"
     }
 
     // MARK: - Confirmaciones
 
     private var confirmTitle: String {
         switch confirm {
-        case .teleop: "¿Mover con el leader?"
-        case .record: "¿Empezar a grabar?"
-        case .run: "¿Dejar que el robot lo haga solo?"
-        case .live: "¿Conectar en vivo?"
+        case .teleop: "Move with the leader?"
+        case .record: "Start recording?"
+        case .run: "Let it do it on its own?"
+        case .live: "Connect live?"
         case nil: ""
         }
     }
 
     private var confirmButton: String {
         switch confirm {
-        case .teleop: "Mover"
-        case .record: "Grabar"
-        case .run: "Probar en el robot"
-        case .live: "Conectar"
-        case nil: "Aceptar"
+        case .teleop: "Move"
+        case .record: "Record"
+        case .run: "Run on the robot"
+        case .live: "Connect"
+        case nil: "OK"
         }
     }
 
@@ -377,11 +377,11 @@ struct DeviceScreen: View {
     private func message(_ action: Action) -> String {
         switch action {
         case .live:
-            "El brazo se va a quedar firme en su pose. Solo se mueve con los controles o cuando apruebes lo que propone la IA."
+            "The arm will hold its pose. It only moves with the controls or when you approve what the AI suggests."
         case .teleop, .record:
-            "El follower va a copiar al leader en cuanto se conecte. Pon el leader en una pose parecida a la del follower, con las fuentes encendidas."
+            "The follower will copy the leader as soon as it connects. Put the leader in a pose similar to the follower’s, with both power supplies on."
         case .run:
-            "El robot se va a mover solo. Despeja la mesa y quédate cerca de la fuente; Esc lo detiene."
+            "The robot will move on its own. Clear the table and stay near the power supply; Esc stops it."
         }
     }
 
@@ -402,8 +402,8 @@ struct DeviceScreen: View {
         if case .failed(let m) = devices.probe { return m }
         guard let at = device.probedAt else { return nil }
         let when = at.formatted(date: .omitted, time: .shortened)
-        return device.found.isEmpty ? "No respondió ningún motor (\(when)). Revisa que tenga la fuente encendida."
-                                    : "Conexión correcta: \(device.found.count) motores respondieron (\(when))."
+        return device.found.isEmpty ? "No motors responded (\(when)). Check that its power supply is on."
+                                    : "Connected: \(device.found.count) motors responded (\(when))."
     }
 
     private var probeError: Bool { if case .failed = devices.probe { true } else { false } }

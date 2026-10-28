@@ -54,7 +54,7 @@ enum TrainQueries {
         p.waitUntilExit()
         let text = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         guard let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            throw NSError(domain: "Curiosity", code: 5, userInfo: [NSLocalizedDescriptionKey: "No se pudo lanzar el entrenamiento."])
+            throw NSError(domain: "Curiosity", code: 5, userInfo: [NSLocalizedDescriptionKey: "Couldn't start the training."])
         }
         return pid
     }

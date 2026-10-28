@@ -37,7 +37,7 @@ enum LibraryQueries {
                 group.addTask {
                     let (data, response) = try await URLSession.shared.data(from: rawURL(catalog, path))
                     guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                        throw NSError(domain: "Curiosity", code: 3, userInfo: [NSLocalizedDescriptionKey: "No se pudo descargar \(path)."])
+                        throw NSError(domain: "Curiosity", code: 3, userInfo: [NSLocalizedDescriptionKey: "Couldn't download \(path)."])
                     }
                     let dest = root.appendingPathComponent(path)
                     try FileManager.default.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)

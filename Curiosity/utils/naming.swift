@@ -6,7 +6,7 @@ enum Naming {
         let plain = text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .init(identifier: "es")).lowercased()
         let parts = plain.split { !$0.isLetter && !$0.isNumber }.map(String.init)
         let slug = String(parts.joined(separator: "_").prefix(max)).trimmingCharacters(in: CharacterSet(charactersIn: "_"))
-        return slug.isEmpty ? "tarea" : slug
+        return slug.isEmpty ? "task" : slug
     }
 
     /// `base`, o `base_2`, `base_3`… si ya existe.

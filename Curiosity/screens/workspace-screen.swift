@@ -60,7 +60,7 @@ struct WorkspaceScreen: View {
         // El panel sí respeta la toolbar: empieza debajo de ella.
         .overlay(alignment: .trailing) {
             if panelVisible {
-                FloatingPanel(tabs: [(.chat, "Chat"), (.control, "Control"), (.simulation, "Simulación"), (.scene, "Escena")],
+                FloatingPanel(tabs: [(.chat, "Chat"), (.control, "Control"), (.simulation, "Simulation"), (.scene, "Scene")],
                               selection: $tab) {
                     switch tab {
                     case .chat:
@@ -120,16 +120,16 @@ struct WorkspaceScreen: View {
     }
 
     private var subtitle: String {
-        guard let m = simulation.model else { return "Cargando…" }
-        return "\(m.joints.count) articulaciones · \(m.links.count) piezas"
+        guard let m = simulation.model else { return "Loading…" }
+        return "\(m.joints.count) joints · \(m.links.count) links"
     }
 
     /// Ideas para empezar, según lo que tiene el robot.
     private var suggestions: [String] {
-        var out = ["¿Qué ves en la escena?", "Saluda moviendo el brazo"]
-        if !(simulation.objects.isEmpty) { out.append("Empuja el cubo rojo hacia la izquierda") }
+        var out = ["What do you see in the scene?", "Wave hello with the arm"]
+        if !(simulation.objects.isEmpty) { out.append("Push the red cube to the left") }
         if simulation.model?.joints.contains(where: { $0.name.lowercased().contains("grip") }) == true {
-            out.append("Abre y cierra la pinza")
+            out.append("Open and close the gripper")
         }
         return out
     }
@@ -144,56 +144,56 @@ struct WorkspaceScreen: View {
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             Button { simulation.togglePause() } label: {
-                Label(simulation.state.paused ? "Reanudar" : "Pausar",
+                Label(simulation.state.paused ? "Resume" : "Pause",
                       systemImage: simulation.state.paused ? IconName.play.rawValue : IconName.pause.rawValue)
             }
             .keyboardShortcut(.space, modifiers: [])
-            .help(simulation.state.paused ? "Reanudar (espacio)" : "Pausar (espacio)")
+            .help(simulation.state.paused ? "Resume (Space)" : "Pause (Space)")
 
-            Button { simulation.step() } label: { Label("Avanzar", systemImage: IconName.step.rawValue) }
+            Button { simulation.step() } label: { Label("Step", systemImage: IconName.step.rawValue) }
                 .disabled(!simulation.state.paused)
-                .help("Avanzar unos pasos")
+                .help("Step forward a few frames")
 
-            Button { simulation.reset() } label: { Label("Reiniciar", systemImage: IconName.reset.rawValue) }
+            Button { simulation.reset() } label: { Label("Reset", systemImage: IconName.reset.rawValue) }
                 .keyboardShortcut("r", modifiers: .command)
-                .help("Volver a la pose inicial (⌘R)")
+                .help("Back to the home pose (⌘R)")
 
             Menu {
-                Picker("Velocidad", selection: Binding(get: { simulation.speed }, set: simulation.setSpeed)) {
+                Picker("Speed", selection: Binding(get: { simulation.speed }, set: simulation.setSpeed)) {
                     ForEach(Self.speeds, id: \.self) { Text(String(format: "%g×", $0)).tag($0) }
                 }
                 .pickerStyle(.inline)
                 Divider()
-                Section("Vista") {
+                Section("View") {
                     Button("3/4") { simulation.view("tres") }
-                    Button("Frente") { simulation.view("frente") }
-                    Button("Lado") { simulation.view("lado") }
-                    Button("Arriba") { simulation.view("arriba") }
+                    Button("Front") { simulation.view("frente") }
+                    Button("Side") { simulation.view("lado") }
+                    Button("Top") { simulation.view("arriba") }
                 }
                 if let cams = simulation.model?.cameras, !cams.isEmpty {
-                    Section("Cámara del robot") {
-                        Picker("Cámara", selection: Binding(get: { simulation.activeCamera ?? "" },
+                    Section("Robot camera") {
+                        Picker("Camera", selection: Binding(get: { simulation.activeCamera ?? "" },
                                                            set: { simulation.showCamera($0.isEmpty ? nil : $0) })) {
-                            Text("Ninguna").tag("")
+                            Text("None").tag("")
                             ForEach(cams, id: \.self) { Text($0).tag($0) }
                         }
                         .pickerStyle(.inline)
                     }
                 }
             } label: {
-                Label("Vista", systemImage: IconName.views.rawValue)
+                Label("View", systemImage: IconName.views.rawValue)
             }
-            .help("Velocidad, vista y cámaras")
+            .help("Speed, view and cameras")
         }
 
         if recording.canRecord {
             ToolbarSpacer(.fixed)
             ToolbarItem(placement: .primaryAction) {
-                Button { showingRecord = true } label: { Label("Grabar con el leader", systemImage: "record.circle") }
+                Button { showingRecord = true } label: { Label("Record with the leader", systemImage: "record.circle") }
                     .disabled(recording.isActive || devices.devices.allSatisfy { !$0.canTeleoperate })
                     .help(devices.devices.contains(where: \.canTeleoperate)
-                          ? "Grabar demostraciones moviendo el robot simulado con tu leader"
-                          : "Conecta tu SO-101 con su leader para grabar en la simulación")
+                          ? "Record demos by moving the simulated robot with your leader"
+                          : "Connect your SO-101 and its leader to record in the simulation")
             }
         }
 
@@ -201,25 +201,25 @@ struct WorkspaceScreen: View {
 
         ToolbarItemGroup(placement: .primaryAction) {
             Button { chat.reset(robotName: robot.name, robotID: robot.id); tab = .chat } label: {
-                Label("Nueva conversación", systemImage: IconName.clear.rawValue)
+                Label("New conversation", systemImage: IconName.clear.rawValue)
             }
             .keyboardShortcut("n", modifiers: .command)
-            .help("Nueva conversación (⌘N)")
+            .help("New conversation (⌘N)")
 
             Button { withAnimation(.snappy) { panelVisible.toggle() } } label: {
                 Label("Panel", systemImage: "sidebar.right")
             }
             .keyboardShortcut("0", modifiers: [.command, .option])
-            .help("Mostrar u ocultar el panel (⌥⌘0)")
+            .help("Show or hide the panel (⌥⌘0)")
         }
 
         ToolbarSpacer(.fixed)
 
         ToolbarItem(placement: .primaryAction) {
             SettingsLink {
-                Label("Ajustes", systemImage: IconName.settings.rawValue)
+                Label("Settings", systemImage: IconName.settings.rawValue)
             }
-            .help("Ajustes: conectar API keys y elegir el modelo (⌘,)")
+            .help("Settings: connect API keys and choose the model (⌘,)")
         }
     }
 }
