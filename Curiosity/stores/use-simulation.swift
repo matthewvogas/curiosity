@@ -26,6 +26,8 @@ final class UseSimulation {
 
     init() {
         engine.onMessage = { [weak self] message in self?.handle(message) }
+        // Un visor nuevo empieza vacío: se le vuelve a cargar el robot abierto.
+        engine.onAttach = { [weak self] in Task { @MainActor in self?.reload() } }  // fuera de la actualización de la vista
     }
 
     func open(_ robot: Robot, profile: [String: Any], force: Bool = false) {

@@ -10,6 +10,8 @@ final class SimulationQueries: NSObject, WKScriptMessageHandler {
 
     /// Cada mensaje del motor (ready, loading, model, state, log, error), sin transformar.
     var onMessage: ([String: Any]) -> Void = { _ in }
+    /// Se llamó al montar un visor nuevo (al volver al simulador): hay que cargarle el robot otra vez.
+    var onAttach: () -> Void = {}
 
     /// URL de la página del motor dentro de la app.
     static let engineURL = URL(string: "curiosity://local/app/studio/index.html")!
@@ -25,6 +27,8 @@ final class SimulationQueries: NSObject, WKScriptMessageHandler {
         guard self.webView !== webView else { return }
         self.webView = webView
         ready = false
+        pending.removeAll()  // eran para el visor anterior
+        onAttach()
     }
 
     // MARK: - Órdenes al motor
