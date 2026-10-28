@@ -16,6 +16,7 @@ struct DeviceScreen: View {
     @State private var showingSettings = false
     @State private var showingHub = false
     @State private var snapshot: Data?
+    @State private var deleting: DatasetInfo?
     // Revisión previa (grabar o probar): cada pieza, sin mover nada.
     @State private var preflightFor: Action?
     @State private var checks: [PreflightCheck] = []
@@ -55,6 +56,16 @@ struct DeviceScreen: View {
                     Task { await run(action) }
                 }
             } message: { Text(confirmMessage) }
+            .confirmationDialog("¿Borrar «\(deleting?.name ?? "")»?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+                Button("Borrar", role: .destructive) {
+                    let d = deleting   // el diálogo borra `deleting` al cerrarse
+                    Task { if let d { await datasets.delete(d) } }
+                }
+            } message: {
+                Text(deleting?.source == "hub"
+                     ? "Se borra la copia en esta Mac; sigue en Hugging Face y se puede volver a bajar."
+                     : "Se borran sus \(deleting?.episodes ?? 0) demostraciones de esta Mac. No se puede deshacer. Los modelos ya entrenados no se tocan.")
+            }
     }
 
     // MARK: - Contenido
@@ -74,6 +85,7 @@ struct DeviceScreen: View {
                           onOpenTask: { tasks.selectedID = $0 },
                           onNewTask: { tasks.composingFor = device.id },
                           onRevealDataset: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: $0.root)]) },
+                          onDeleteDataset: { deleting = $0 },
                           onRunModel: { runJob = $0; check(.run) })
         }
     }

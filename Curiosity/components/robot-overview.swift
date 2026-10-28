@@ -27,6 +27,7 @@ struct RobotOverview: View {
     let onOpenTask: (UUID) -> Void
     let onNewTask: () -> Void
     let onRevealDataset: (DatasetInfo) -> Void
+    let onDeleteDataset: (DatasetInfo) -> Void
     let onRunModel: (String) -> Void
 
     var body: some View {
@@ -47,6 +48,8 @@ struct RobotOverview: View {
                                 detail: "\(d.episodes) demostraciones · \(ByteCountFormatter.string(fromByteCount: Int64(d.bytes), countStyle: .file)) · \(d.source == "hub" ? "Hugging Face" : "grabado aquí")") {
                                 Button { onRevealDataset(d) } label: { Icon(name: .eye) }
                                     .buttonStyle(.borderless).help("Mostrar en Finder")
+                                Button { onDeleteDataset(d) } label: { Icon(name: .trash) }
+                                    .buttonStyle(.borderless).help("Borrar estas demostraciones")
                             }
                         }
                     }
