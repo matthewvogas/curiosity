@@ -17,6 +17,7 @@ struct OverviewModel: Identifiable {
     let detail: String
     let ready: Bool
     let training: Bool
+    let fraction: Double?
 }
 
 struct RobotOverview: View {
@@ -29,6 +30,7 @@ struct RobotOverview: View {
     let onRevealDataset: (DatasetInfo) -> Void
     let onDeleteDataset: (DatasetInfo) -> Void
     let onRunModel: (String) -> Void
+    let onOpenModel: (String) -> Void
 
     var body: some View {
         ScrollView {
@@ -60,8 +62,21 @@ struct RobotOverview: View {
                     } else {
                         rows(models) { m in
                             row(icon: .model, title: m.title, detail: m.detail) {
+                                Button { onOpenModel(m.id) } label: {
+                                    if m.training, let f = m.fraction {
+                                        HStack(spacing: 6) {
+                                            ProgressView(value: f).frame(width: 60).controlSize(.small)
+                                            Text("\(Int(f * 100)) %").monospacedDigit()
+                                        }
+                                    } else {
+                                        Image(systemName: "chart.xyaxis.line")
+                                    }
+                                }
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+                                .help("Ver el entrenamiento en vivo: progreso, curva de pérdida y registro")
                                 if m.training {
-                                    Text("Entrenando").font(.caption).foregroundStyle(Theme.muted)
+                                    EmptyView()
                                 } else if m.ready {
                                     Button("Probar") { onRunModel(m.id) }.disabled(!canRun)
                                         .help(canRun ? "Que lo haga solo" : "Configura el follower y la cámara en Ajustes del robot")

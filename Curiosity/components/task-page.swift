@@ -22,6 +22,8 @@ struct TaskPageActions {
     var onUseOwn: () -> Void
     var onTrain: () -> Void
     var onStopTraining: () -> Void
+    /// Abre el entrenamiento en vivo (nil si todavía no hay ninguno).
+    var onWatchTraining: (() -> Void)?
     var onRun: () -> Void
     var onFixSetup: () -> Void
     var onRemove: () -> Void
@@ -83,6 +85,9 @@ struct TaskPage: View {
                 Stepper("\(steps.formatted()) pasos", value: $steps, in: 1000...200_000, step: 1000)
                     .disabled(training)
                 HStack {
+                    if let watch = actions.onWatchTraining {
+                        Button(training ? "Ver en vivo" : "Ver entrenamiento", action: watch).buttonStyle(.link)
+                    }
                     Spacer()
                     if training {
                         Button("Detener", action: actions.onStopTraining)

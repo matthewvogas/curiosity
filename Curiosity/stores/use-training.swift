@@ -9,6 +9,8 @@ final class UseTraining {
     private(set) var jobs: [TrainJob] = TrainQueries.jobs()
     private(set) var progress: [String: TrainProgress] = [:]
     private(set) var message: String?
+    /// El entrenamiento abierto en vivo (curva y registro); nil si no se está mirando ninguno.
+    private(set) var watched: TrainWatch?
     private var poller: Task<Void, Never>?
 
     init(settings: UseSettings) {
@@ -27,6 +29,16 @@ final class UseTraining {
     func refresh() {
         let next = Dictionary(uniqueKeysWithValues: jobs.map { ($0.name, TrainQueries.progress($0)) })
         if next != progress { progress = next }
+        if let name = watched?.name, let job = jobs.first(where: { $0.name == name }) {
+            let w = TrainWatch(name: name, history: TrainQueries.history(job), log: TrainQueries.logTail(job))
+            if w != watched { watched = w }
+        }
+    }
+
+    /// Empieza (o deja) de mirar un entrenamiento en vivo.
+    func watch(_ name: String?) {
+        watched = name.map { TrainWatch(name: $0) }
+        refresh()
     }
 
     /// Lanza un entrenamiento. `dataset` es un repo_id (local/… para los de esta Mac, usuario/… del Hub).

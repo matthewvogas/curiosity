@@ -38,6 +38,9 @@ struct DeviceScreen: View {
             .onChange(of: lerobot.session?.active) { _, active in if active == false { Task { await datasets.load() } } }
             .sheet(isPresented: $showingSettings) { settingsSheet }
             .sheet(isPresented: $showingHub) { hubSheet }
+            .sheet(isPresented: Binding(get: { training.watched != nil }, set: { if !$0 { training.watch(nil) } })) {
+                liveTraining
+            }
             .sheet(isPresented: Binding(get: { preflightFor != nil }, set: { if !$0 { preflightFor = nil } })) {
                 PreflightView(
                     title: preflightFor == .record ? "Antes de grabar" : preflightFor == .live ? "Antes de conectar" : "Antes de probar",
@@ -92,7 +95,8 @@ struct DeviceScreen: View {
                           onNewTask: { tasks.composingFor = device.id },
                           onRevealDataset: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: $0.root)]) },
                           onDeleteDataset: { deleting = $0 },
-                          onRunModel: { runJob = $0; check(.run) })
+                          onRunModel: { runJob = $0; check(.run) },
+                          onOpenModel: { training.watch($0) })
         }
     }
 
@@ -104,13 +108,30 @@ struct DeviceScreen: View {
         }
     }
 
+    @ViewBuilder
+    private var liveTraining: some View {
+        if let w = training.watched, let job = training.jobs.first(where: { $0.name == w.name }) {
+            TrainingLiveView(title: jobTitle(job), detail: jobDetail(job), progress: training.progress[job.name], watch: w,
+                             onStop: { training.stop(job) }, onClose: { training.watch(nil) })
+        }
+    }
+
+    private func jobTitle(_ job: TrainJob) -> String {
+        tasks.tasks.first { job.name == $0.trainName || job.name.hasPrefix($0.trainName + "_") }?.title ?? job.name
+    }
+
+    private func jobDetail(_ job: TrainJob) -> String {
+        "\(policyName(job.policy)) · \(job.steps.formatted()) pasos · lote \(job.batchSize) · \(job.dataset)"
+    }
+
     private var overviewModels: [OverviewModel] {
         training.jobs.map { j in
             let p = training.progress[j.name]
             let title = tasks.tasks.first { j.name == $0.trainName || j.name.hasPrefix($0.trainName + "_") }?.title ?? j.name
             return OverviewModel(id: j.name, title: title,
                                  detail: "\(policyName(j.policy)) · \(j.steps.formatted()) pasos · \(j.dataset) · \(j.started.formatted(date: .abbreviated, time: .omitted))",
-                                 ready: p?.hasModel == true, training: p?.running == true)
+                                 ready: p?.hasModel == true, training: p?.running == true,
+                                 fraction: p?.running == true ? p?.fraction : nil)
         }
     }
 
@@ -127,6 +148,7 @@ struct DeviceScreen: View {
             onUseOwn: { tasks.update(task.id) { $0.hubDataset = false; $0.dataset = Naming.slug($0.title) } },
             onTrain: { startTraining(task) },
             onStopTraining: { if let job = s.job { training.stop(job) } },
+            onWatchTraining: s.job.map { job in { training.watch(job.name) } },
             onRun: { runJob = nil; check(.run) },
             onFixSetup: { showingSettings = true },
             onRemove: { tasks.remove(task.id) })

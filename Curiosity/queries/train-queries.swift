@@ -93,6 +93,32 @@ enum TrainQueries {
         return out
     }
 
+    /// La curva de pérdida completa (lerobot-train escribe una línea cada log_freq pasos).
+    static func history(_ job: TrainJob) -> [LossPoint] {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: job.log)), let text = String(data: data, encoding: .utf8) else { return [] }
+        var points: [LossPoint] = []
+        for line in text.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) where line.contains("loss:") {
+            guard let loss = line.firstMatch(of: /\bloss:([\d.]+)/).flatMap({ Double($0.output.1) }) else { continue }
+            // El paso exacto sale de la barra (200/20000 [...]); si no está, de «step:1.2K».
+            if let bar = line.firstMatch(of: /(\d+)\/\d+ \[/), let step = Int(bar.output.1) {
+                points.append(LossPoint(step: step, loss: loss))
+            } else if let s = line.firstMatch(of: /\bstep:([\d.]+)([KMB]?)/), let n = Double(s.output.1) {
+                let scales: [String: Double] = ["K": 1e3, "M": 1e6, "B": 1e9]
+                let scale = scales[String(s.output.2)] ?? 1
+                points.append(LossPoint(step: Int(n * scale), loss: loss))
+            }
+        }
+        return points
+    }
+
+    /// Las últimas líneas del registro, sin las actualizaciones de la barra de progreso.
+    static func logTail(_ job: TrainJob, lines: Int = 40) -> [String] {
+        guard let text = tail(URL(fileURLWithPath: job.log), size: 60_000) else { return [] }
+        let all = text.split(whereSeparator: { $0 == "\n" || $0 == "\r" }).map(String.init)
+        let clean = all.enumerated().filter { i, l in !l.hasPrefix("Training:") || i == all.count - 1 }.map(\.element)
+        return Array(clean.suffix(lines))
+    }
+
     private static func tail(_ url: URL, size: Int = 200_000) -> String? {
         guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? h.close() }

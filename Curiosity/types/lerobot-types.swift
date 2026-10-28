@@ -123,6 +123,20 @@ struct TrainProgress: Equatable {
     var fraction: Double { total.map { $0 > 0 ? Double(step) / Double($0) : 0 } ?? 0 }
 }
 
+/// Un punto de la curva de pérdida de un entrenamiento.
+struct LossPoint: Equatable, Identifiable {
+    var step: Int
+    var loss: Double
+    var id: Int { step }
+}
+
+/// Lo que se ve de un entrenamiento abierto en vivo: su curva y las últimas líneas del registro.
+struct TrainWatch: Equatable {
+    var name: String
+    var history: [LossPoint] = []
+    var log: [String] = []
+}
+
 /// Modelos de LeRobot que se pueden entrenar desde la app.
 struct PolicyOption: Identifiable, Hashable {
     let id: String
