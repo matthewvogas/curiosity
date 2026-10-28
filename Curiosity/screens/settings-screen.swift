@@ -65,7 +65,7 @@ struct SettingsScreen: View {
                     }
                 }
             } header: {
-                Text("Robots reales")
+                Text("Robots conectados")
             } footer: {
                 Text("Para teleoperar, grabar y entrenar, la app usa tu instalación de LeRobot. El token de Hugging Face (huggingface.co/settings/tokens, con permiso de escritura) sirve para subir datasets y bajar los privados; se guarda en el Llavero.")
                     .foregroundStyle(Theme.muted)

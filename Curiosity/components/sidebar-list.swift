@@ -35,7 +35,7 @@ struct SidebarList: View {
                     }
             }
 
-            SidebarHeader(title: "Robots reales", help: "Conectar robot externo", onAdd: onConnect)
+            SidebarHeader(title: "Robots conectados", help: "Conectar robot externo", onAdd: onConnect)
                 .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 2, trailing: 0))
                 .listRowBackground(Color.clear)
                 .selectionDisabled()
@@ -64,11 +64,11 @@ private struct SidebarHeader: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(Theme.muted)
             Spacer()
             if let onAdd { Button(action: onAdd) {
-                Icon(name: .add, size: 12, weight: .semibold)
+                Icon(name: .add, size: 14, weight: .semibold)
                     .frame(width: 22, height: 22, alignment: .trailing)
                     .contentShape(.rect)
             }
