@@ -9,6 +9,9 @@ struct WorkspaceScreen: View {
     @Environment(UseSettings.self) private var settings
     @Environment(UseRobots.self) private var robots
     @Environment(\.openSettings) private var openSettings
+    @Environment(UseSimRecording.self) private var recording
+    @Environment(UseDevices.self) private var devices
+    @State private var showingRecord = false
 
     enum PanelTab: String, Hashable { case chat, control, simulation, scene }
     /// Se recuerda la última pestaña.
@@ -46,6 +49,13 @@ struct WorkspaceScreen: View {
             }
             .animation(.snappy, value: simulation.notice)
             .padding(Theme.Space.xl)
+
+            if let s = recording.session, s.active {
+                SimRecordBar(session: s, onNext: recording.next, onRedo: recording.redo, onStop: recording.stop)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.trailing, panelVisible ? Theme.chatWidth + Theme.Space.m : 0)
+                    .padding(.bottom, Theme.Space.xl)
+            }
         }
         // El panel sí respeta la toolbar: empieza debajo de ella.
         .overlay(alignment: .trailing) {
@@ -92,6 +102,14 @@ struct WorkspaceScreen: View {
         .navigationTitle(robot.name)
         .navigationSubtitle(subtitle)
         .toolbar { toolbar }
+        .sheet(isPresented: $showingRecord) {
+            SimRecordSheet(leaders: devices.devices.filter(\.canTeleoperate),
+                           onStart: { leader, task, episodes, seconds in
+                               showingRecord = false
+                               Task { await recording.start(leader: leader, task: task, episodes: episodes, seconds: seconds, reset: 5) }
+                           },
+                           onCancel: { showingRecord = false })
+        }
         .sheet(isPresented: $showingModel) {
             ModelSheet(title: simulation.model?.name ?? robot.name, text: simulation.modelSummary)
         }
@@ -166,6 +184,17 @@ struct WorkspaceScreen: View {
                 Label("Vista", systemImage: IconName.views.rawValue)
             }
             .help("Velocidad, vista y cámaras")
+        }
+
+        if recording.canRecord {
+            ToolbarSpacer(.fixed)
+            ToolbarItem(placement: .primaryAction) {
+                Button { showingRecord = true } label: { Label("Grabar con el leader", systemImage: "record.circle") }
+                    .disabled(recording.isActive || devices.devices.allSatisfy { !$0.canTeleoperate })
+                    .help(devices.devices.contains(where: \.canTeleoperate)
+                          ? "Grabar demostraciones moviendo el robot simulado con tu leader"
+                          : "Conecta tu SO-101 con su leader para grabar en la simulación")
+            }
         }
 
         ToolbarSpacer(.fixed)

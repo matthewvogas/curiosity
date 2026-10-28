@@ -164,6 +164,20 @@ final class UseLeRobot {
         return photos
     }
 
+    /// Demostraciones en la simulación: el leader real mueve el robot simulado; el follower no se conecta.
+    func simRecord(leader d: Device, dataset: String, task: String, episodes: Int, episodeSeconds: Double, resetSeconds: Double) async {
+        let root = AppPaths.datasets.appendingPathComponent(dataset).path
+        await startSession("simrecord", leader(d).merging([
+            "follower_id": d.followerID ?? "", "repo_id": "local/\(dataset)", "root": root, "task": task,
+            "num_episodes": episodes, "episode_time_s": episodeSeconds, "reset_time_s": resetSeconds, "fps": 30,
+        ]) { $1 })
+    }
+
+    /// Un cuadro de la simulación para la grabación: la imagen de su cámara y su estado (grados; pinza 0-100).
+    func simFrame(jpeg: Data, state: [String: Double]) async {
+        _ = try? await bridge.request("sim_frame", ["jpeg": jpeg.base64EncodedString(), "state": state])
+    }
+
     func next() { Task { _ = try? await bridge.request("next") } }
     func redo() { Task { _ = try? await bridge.request("redo") } }
     func stop() { Task { _ = try? await bridge.request("stop") } }
@@ -211,7 +225,7 @@ final class UseLeRobot {
             if camera == "front" { frame = data }
             return
         }
-        guard ["teleop", "record", "rollout", "live"].contains(kind) else { return }
+        guard ["teleop", "record", "rollout", "live", "simrecord"].contains(kind) else { return }
         var s = RobotSession(kind: kind, phase: e["phase"] as? String ?? "", active: e["active"] as? Bool ?? false)
         s.error = e["error"] as? String
         s.hz = (e["hz"] as? NSNumber)?.doubleValue ?? 0

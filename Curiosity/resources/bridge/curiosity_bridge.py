@@ -579,6 +579,128 @@ def camera_configs(msg):
     return out
 
 
+class SimRecord(Session):
+    """Demostraciones en la simulación: el leader real mueve el SO-101 simulado (la app lo dibuja y manda
+    su cámara y su estado) y se guarda un dataset de LeRobot igual al de lerobot-record. El follower real
+    no se conecta: nada físico se mueve."""
+
+    kind = "simrecord"
+
+    def __init__(self, msg):
+        super().__init__(msg)
+        self.events = {"exit_early": False, "rerecord_episode": False, "stop_recording": False}
+        self.episode = 0
+        self.phase_t0 = time.monotonic()
+        self.phase_limit = 0.0
+        self.joints = {}       # el leader, en grados (para mover la simulación)
+        self.latest = None     # (imagen RGB, estado en grados) que mandó la app
+        self.lock = threading.Lock()
+
+    def control(self, action, payload=None):
+        if action == "next":
+            self.events["exit_early"] = True
+        elif action == "redo":
+            self.events["rerecord_episode"] = True
+            self.events["exit_early"] = True
+        elif action == "frame":
+            import cv2
+            import numpy as np
+
+            img = cv2.imdecode(np.frombuffer(base64.b64decode(payload["jpeg"]), np.uint8), cv2.IMREAD_COLOR)
+            if img is not None:
+                h, w = self.size
+                rgb = cv2.cvtColor(cv2.resize(img, (w, h)), cv2.COLOR_BGR2RGB)
+                with self.lock:
+                    self.latest = (rgb, {j: float(v) for j, v in payload["state"].items()})
+
+    def stop(self):
+        self.events["stop_recording"] = True
+        self.events["exit_early"] = True
+        super().stop()
+
+    size = (480, 640)
+
+    def run(self):
+        from lerobot.datasets.lerobot_dataset import LeRobotDataset
+        from lerobot.teleoperators import make_teleoperator_from_config
+        from lerobot.teleoperators.so_leader import SO101LeaderConfig
+        from lerobot.utils.feature_utils import build_dataset_frame, combine_feature_dicts, hw_to_dataset_features
+
+        m = self.msg
+        fps = int(m.get("fps", 30))
+        half = half_spans(m.get("follower_id"))
+        to_norm = lambda deg: {f"{j}.pos": (deg[j] / half[j] * 100 if j != "gripper" else deg[j]) for j in JOINTS}
+        joint_ft = {f"{j}.pos": float for j in JOINTS}
+        features = combine_feature_dicts(hw_to_dataset_features(joint_ft, "action"),
+                                         hw_to_dataset_features({**joint_ft, "front": (*self.size, 3)}, "observation"))
+        root = Path(m["root"])
+        done = 0
+        if (root / "meta" / "info.json").exists():
+            done = json.loads((root / "meta" / "info.json").read_text()).get("total_episodes", 0)
+        if done == 0 and root.exists():
+            shutil.rmtree(root)
+        dataset = (LeRobotDataset.resume(m["repo_id"], root=root, image_writer_threads=4) if done
+                   else LeRobotDataset.create(m["repo_id"], fps, features=features, root=root, robot_type="so101_follower",
+                                              use_videos=True, image_writer_threads=4))
+        self.episode = dataset.num_episodes
+        self.target = dataset.num_episodes + int(m["num_episodes"])
+        leader = make_teleoperator_from_config(SO101LeaderConfig(port=m["leader_port"], id=m["leader_id"]))
+        try:
+            leader.connect()
+            target = self.target
+            while dataset.num_episodes < target and not self.events["stop_recording"]:
+                self._phase("recording", float(m["episode_time_s"]))
+                self._loop(leader, fps, dataset, features, to_norm, m["task"], record=True)
+                if self.events["rerecord_episode"]:
+                    self.events["rerecord_episode"] = False
+                    self.events["exit_early"] = False
+                    dataset.clear_episode_buffer()
+                    continue
+                if dataset.has_pending_frames():
+                    self.phase = "saving"
+                    dataset.save_episode()
+                    self.episode = dataset.num_episodes
+                if self.events["stop_recording"] or dataset.num_episodes >= target:
+                    break
+                self._phase("reset", float(m["reset_time_s"]))
+                self._loop(leader, fps, dataset, features, to_norm, m["task"], record=False)
+        finally:
+            self.phase = "saving"
+            dataset.finalize()
+            try:
+                leader.disconnect()
+            except Exception:
+                pass
+
+    def _phase(self, name, limit):
+        self.phase, self.phase_t0, self.phase_limit = name, time.monotonic(), limit
+        self.events["exit_early"] = False
+
+    def _loop(self, leader, fps, dataset, features, to_norm, task, record):
+        """Cada 1/fps: lee el leader (y lo manda a la app) y, si graba, guarda la última imagen y estado."""
+        dt = 1 / fps
+        while not self.events["exit_early"] and time.monotonic() - self.phase_t0 < self.phase_limit:
+            t = time.perf_counter()
+            action = leader.get_action()  # -100..100 (la pinza 0..100), como lerobot-record
+            half = half_spans(self.msg.get("follower_id"))
+            self.joints = {j: round(action[f"{j}.pos"] / 100 * half[j] if j != "gripper" else action[f"{j}.pos"], 2) for j in JOINTS}
+            emit({"event": "simrecord", **self.status(), "active": True})
+            with self.lock:
+                latest = self.latest
+            if record and latest is not None:
+                from lerobot.utils.feature_utils import build_dataset_frame
+
+                image, state = latest
+                obs = {**to_norm(state), "front": image}
+                dataset.add_frame({**build_dataset_frame(features, obs, prefix="observation"),
+                                   **build_dataset_frame(features, action, prefix="action"), "task": task})
+            time.sleep(max(0.0, dt - (time.perf_counter() - t)))
+
+    def status(self):
+        return {**super().status(), "episode": self.episode, "target": getattr(self, "target", int(self.msg["num_episodes"])),
+                "elapsed": round(time.monotonic() - self.phase_t0, 1), "limit": self.phase_limit, "joints": self.joints}
+
+
 class Live(Session):
     """El robot en vivo, sin leader: se queda firme en su pose y va hacia los objetivos que mande la app
     (la persona con los controles, o la IA después de que la persona aprueba), a velocidad limitada.
@@ -854,7 +976,7 @@ class Rollout(Session):
 current: Session | None = None
 QUERIES = {"hello": cmd_hello, "calibrations": cmd_calibrations, "snapshot": cmd_snapshot, "preflight": cmd_preflight, "study": cmd_study,
            "datasets": cmd_datasets, "delete_dataset": cmd_delete_dataset}
-SESSIONS = {"teleop": Teleop, "record": Record, "rollout": Rollout, "live": Live}
+SESSIONS = {"teleop": Teleop, "record": Record, "rollout": Rollout, "live": Live, "simrecord": SimRecord}
 
 
 def handle(msg: dict) -> dict:
@@ -871,6 +993,10 @@ def handle(msg: dict) -> dict:
     if cmd == "stop":
         if current is not None and current.active:
             current.stop()
+        return {}
+    if cmd == "sim_frame":
+        if isinstance(current, SimRecord) and current.active:
+            current.control("frame", msg)
         return {}
     if cmd in ("next", "redo"):
         if current is not None and current.active:
