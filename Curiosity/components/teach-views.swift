@@ -2,40 +2,69 @@ import SwiftUI
 
 // Enseñarle una tarea al robot real, en tres pasos guiados. Solo dibujan: datos y acciones por props.
 
-/// Sin tareas: una sola pregunta.
+/// Sin tareas: una sola pregunta, centrada como los estados vacíos de macOS, con un campo tipo composer.
 struct TaskEmptyState: View {
     let onCreate: (String) -> Void
     @State private var title = ""
+    @FocusState private var focused: Bool
 
     private static let examples = ["Pon el cubo rojo dentro del vaso", "Apila los dos bloques", "Empuja la pelota a la izquierda"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Space.l) {
-            VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                Text("¿Qué quieres que aprenda?").font(.title.weight(.semibold))
-                Text("Le muestras la tarea varias veces con el leader, se entrena con eso y luego la hace solo.")
+        VStack(spacing: Theme.Space.xl) {
+            VStack(spacing: Theme.Space.s) {
+                Image(systemName: "hand.point.up.left.and.text")
+                    .font(.system(size: 40, weight: .light))
                     .foregroundStyle(Theme.muted)
+                    .padding(.bottom, Theme.Space.xs)
+                Text("¿Qué quieres que aprenda?").font(.title.weight(.semibold))
+                Text("Se la muestras unas veces con el leader, se entrena y luego la hace solo.")
+                    .font(.body).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
             }
-            HStack {
-                TextField("Describe la tarea", text: $title, prompt: Text("Pon el cubo rojo dentro del vaso"))
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.large)
-                    .onSubmit(create)
-                Button("Empezar", action: create).buttonStyle(.borderedProminent).controlSize(.large)
-                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
+
             HStack(spacing: Theme.Space.s) {
-                ForEach(Self.examples, id: \.self) { e in
-                    Button(e) { title = e }.buttonStyle(.bordered).controlSize(.small)
+                TextField("Describe la tarea", text: $title, prompt: Text("Describe la tarea en una frase"))
+                    .textFieldStyle(.plain)
+                    .font(.title3)
+                    .focused($focused)
+                    .onSubmit(create)
+                Button(action: create) {
+                    Image(systemName: "arrow.up").font(.system(size: 14, weight: .semibold)).frame(width: 18, height: 18)
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .disabled(isEmpty)
+                .help("Empezar (↩)")
+            }
+            .padding(.leading, Theme.Space.l)
+            .padding(.trailing, Theme.Space.s)
+            .padding(.vertical, Theme.Space.s)
+            .glassEffect(.regular, in: .capsule)
+            .frame(maxWidth: 520)
+
+            VStack(spacing: Theme.Space.s) {
+                Text("Ideas").font(.caption).foregroundStyle(Theme.faint)
+                GlassEffectContainer {
+                    HStack(spacing: Theme.Space.s) {
+                        ForEach(Self.examples, id: \.self) { e in
+                            Button(e) { title = e; focused = true }
+                                .buttonStyle(.glass).controlSize(.small)
+                        }
+                    }
                 }
             }
-            Text("Funciona mejor con tareas cortas y siempre iguales, con los objetos en la vista de la cámara.")
-                .font(.caption).foregroundStyle(Theme.muted)
         }
-        .frame(maxWidth: 620)
         .padding(Theme.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom) {
+            Label("Funciona mejor con tareas cortas, siempre iguales y a la vista de la cámara.", systemImage: "lightbulb")
+                .font(.caption).foregroundStyle(Theme.faint)
+                .padding(.bottom, Theme.Space.xl)
+        }
+        .onAppear { focused = true }
     }
+
+    private var isEmpty: Bool { title.trimmingCharacters(in: .whitespaces).isEmpty }
 
     private func create() {
         let t = title.trimmingCharacters(in: .whitespaces)

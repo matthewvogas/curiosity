@@ -154,7 +154,7 @@ struct DeviceScreen: View {
         }
         .sheet(isPresented: $newTask) {
             TaskEmptyState { title in tasks.add(title: title, deviceID: device.id); newTask = false }
-                .frame(width: 640, height: 320)
+                .frame(width: 700, height: 440)
         }
     }
 
