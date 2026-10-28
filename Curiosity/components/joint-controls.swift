@@ -49,7 +49,7 @@ private struct JointRow: View {
                     .font(.callout).monospacedDigit().foregroundStyle(Theme.muted)
                     .contentTransition(.numericText())
             }
-            Slider(value: Binding(get: { state?.target ?? 0 }, set: onChange), in: range)
+            Slider(value: Binding(get: { state?.target ?? 0 }, set: { onChange($0) }), in: range)
                 .controlSize(.small)
                 .tint(Theme.ink.opacity(0.8))
         }
