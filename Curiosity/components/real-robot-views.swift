@@ -12,6 +12,7 @@ struct RobotSetupView: View {
     @Binding var leaderPort: String?
     @Binding var leaderID: String?
     @Binding var cameraIndex: Int?
+    @Binding var extraCameras: [Int]
     let snapshot: Data?
     let onSnapshot: () -> Void
 
@@ -40,6 +41,19 @@ struct RobotSetupView: View {
             if let snapshot, let image = NSImage(data: snapshot) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
                     .frame(maxHeight: 200).clipShape(.rect(cornerRadius: 10))
+            }
+            let others = cameras.filter { $0.index != cameraIndex }
+            if !others.isEmpty {
+                LabeledContent("Otras cámaras en vivo") {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        ForEach(others) { c in
+                            Toggle(c.name, isOn: Binding(
+                                get: { extraCameras.contains(c.index) },
+                                set: { on in extraCameras = on ? extraCameras + [c.index] : extraCameras.filter { $0 != c.index } }))
+                        }
+                    }
+                }
+                .help("Se ven junto a la principal en «En vivo» y la IA también mira por ellas (por ejemplo una vista desde arriba).")
             }
         } header: {
             Text("Brazos y cámara")

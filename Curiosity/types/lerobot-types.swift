@@ -81,6 +81,7 @@ struct PreflightCheck: Identifiable, Equatable {
         case "pose": "Poses"
         case "camera": "Cámara"
         case "permission": "Permiso de cámara"
+        case let k where k.hasPrefix("cam"): "Cámara \(Int(k.dropFirst(3)).map { $0 + 1 } ?? 2)"
         default: key
         }
     }

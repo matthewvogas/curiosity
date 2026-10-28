@@ -19,6 +19,7 @@ struct DeviceLiveScreen: View {
 
     enum PanelTab: String, Hashable { case chat, control }
     @AppStorage("live.tab") private var tab: PanelTab = .chat
+    @State private var focused = 0
 
     var body: some View {
         Group {
@@ -34,18 +35,23 @@ struct DeviceLiveScreen: View {
         }
     }
 
-    private var camera: some View {
-        Group {
-            if let frame = live.frame, let image = NSImage(data: frame) {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-            } else {
-                Rectangle().fill(Theme.fill).aspectRatio(4 / 3, contentMode: .fit)
-                    .overlay(ProgressView())
+    /// Las vistas en vivo: cada cámara y el modelo 3D que copia al robot. Un clic destaca una.
+    private var tiles: some View {
+        let cams = live.cameras
+        return TileLayout(focused: focused) {
+            ForEach(Array(cams.enumerated()), id: \.element.key) { i, cam in
+                Tile(title: cam.name, focused: i == focused, onTap: { focused = i }) {
+                    if let frame = cam.frame, let image = NSImage(data: frame) {
+                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                    } else {
+                        ProgressView()
+                    }
+                }
+            }
+            Tile(title: "Modelo 3D", focused: focused == cams.count, onTap: { focused = cams.count }) {
+                SimStage(engine: live.twin)
             }
         }
-        .clipShape(.rect(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Theme.hairline))
-        .shadow(color: .black.opacity(0.18), radius: 24, y: 8)
         .overlay(alignment: .bottomLeading) {
             Label(live.isReturning ? "Volviendo a su pose…" : live.isReady ? "En vivo" : "Conectando…",
                   systemImage: live.isReady ? "circle.fill" : "circle.dotted")
@@ -54,8 +60,8 @@ struct DeviceLiveScreen: View {
                 .padding(.horizontal, 12).padding(.vertical, 7)
                 .glassEffect(.regular, in: .capsule)
                 .padding(Theme.Space.m)
+                .allowsHitTesting(false)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var start: some View {
@@ -82,8 +88,8 @@ struct DeviceLiveScreen: View {
 
     private var stage: some View {
         ZStack {
-            // La cámara en su propio contenedor, centrada en lo que deja libre el panel.
-            camera
+            // Las cámaras y el modelo 3D, cada uno en su contenedor, en lo que deja libre el panel.
+            tiles
                 .padding(Theme.Space.xl)
                 .padding(.trailing, Theme.chatWidth + Theme.Space.m)
         }
@@ -111,5 +117,33 @@ struct DeviceLiveScreen: View {
             .padding([.horizontal, .bottom], Theme.Space.m)
             .padding(.top, Theme.Space.xs)
         }
+    }
+}
+
+/// Un panel del mosaico: su contenido en un contenedor redondeado, con su nombre.
+private struct Tile<Content: View>: View {
+    let title: String
+    let focused: Bool
+    let onTap: () -> Void
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ZStack {
+            Theme.fill
+            content
+        }
+        .clipShape(.rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.hairline))
+        .overlay(alignment: .topLeading) {
+            Text(title).font(.caption.weight(.medium))
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .glassEffect(.regular, in: .capsule)
+                .padding(Theme.Space.s)
+        }
+        .overlay {
+            // En los paneles chicos, un clic lo pasa a grande (el 3D grande se sigue pudiendo girar).
+            if !focused { Color.clear.contentShape(.rect).onTapGesture(perform: onTap) }
+        }
+        .help(focused ? "" : "Ver en grande")
     }
 }

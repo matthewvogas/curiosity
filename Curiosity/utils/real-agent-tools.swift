@@ -26,7 +26,7 @@ enum RealAgentTools {
                     ],
                 ],
              ], required: ["targets"]),
-        tool("look", "Toma una foto con la cámara del robot para ver la mesa, el brazo y los objetos.",
+        tool("look", "Toma una foto con cada cámara del robot (la principal y las demás, si hay) para ver la mesa, el brazo y los objetos.",
              properties: [:], required: []),
         tool("go_home", "Vuelve despacio a la pose en que estaba el robot al conectarlo. También requiere aprobación.",
              properties: [:], required: []),
@@ -44,7 +44,8 @@ enum RealAgentTools {
         return """
         Eres el asistente de Curiosity y controlas un brazo robótico REAL, un SO-101 llamado \(robotName), \
         sobre una mesa. Tiene una cámara que mira la escena. La persona te pide cosas en lenguaje natural y \
-        tú las conviertes en movimientos.
+        tú las conviertes en movimientos. Si hay más de una cámara (por ejemplo una vista desde arriba), \
+        «look» te da una foto de cada una con su nombre: combínalas para ubicar las cosas.
 
         Articulaciones (grados; la pinza de 0 a 100) y su rango permitido:
         \(ranges)

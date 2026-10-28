@@ -217,14 +217,16 @@ final class UseChat {
             case .text(let text, let problem):
                 finish(problem ?? "", failed: problem != nil)
                 return result(id, text: text)
-            case .image(let jpeg):
+            case .images(let photos):
                 finish("")
-                items.append(ChatItem(kind: .image(jpeg)))
-                return [
-                    "type": "tool_result", "tool_use_id": id,
-                    "content": [["type": "image", "source": ["type": "base64", "media_type": "image/jpeg",
-                                                             "data": jpeg.base64EncodedString()]]],
-                ]
+                var content: [[String: Any]] = []
+                for photo in photos {
+                    items.append(ChatItem(kind: .image(photo.jpeg)))
+                    if !photo.label.isEmpty { content.append(["type": "text", "text": "Cámara «\(photo.label)»:"]) }
+                    content.append(["type": "image", "source": ["type": "base64", "media_type": "image/jpeg",
+                                                                "data": photo.jpeg.base64EncodedString()]])
+                }
+                return ["type": "tool_result", "tool_use_id": id, "content": content]
             }
         } catch {
             finish(error.localizedDescription, failed: true)

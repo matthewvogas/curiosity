@@ -16,7 +16,11 @@ final class UseLeRobot {
     private(set) var cameras: [CameraInfo] = []
     private(set) var session: RobotSession?
     /// Lo que ve la cámara del robot mientras se graba o corre un modelo (JPEG).
+    /// El último cuadro de la cámara principal y, en vivo, el de cada cámara («front», «cam1»…).
     private(set) var frame: Data?
+    private(set) var frames: [String: Data] = [:]
+    /// Avisa cada estado de una sesión (en vivo lo usa el modelo 3D que copia al robot).
+    var onSession: (RobotSession) -> Void = { _ in }
     private(set) var error: String?
 
     var isBusy: Bool { session?.active == true }
@@ -70,7 +74,7 @@ final class UseLeRobot {
     }
 
     /// Revisa cada pieza sin mover nada: permiso de cámara, follower, leader (si `withLeader`), poses y cámara.
-    func preflight(_ d: Device, withLeader: Bool) async -> (checks: [PreflightCheck], picture: Data?) {
+    func preflight(_ d: Device, withLeader: Bool, withExtras: Bool = false) async -> (checks: [PreflightCheck], picture: Data?) {
         if status != .ready { await start() }
         guard await PermissionQueries.camera() else {
             return ([PreflightCheck(key: "permission", state: .fail,
@@ -78,6 +82,7 @@ final class UseLeRobot {
         }
         var args = base(d).merging(["camera": camera(d)]) { $1 }
         if withLeader { args.merge(leader(d)) { $1 } }
+        if withExtras { args["extra_cameras"] = d.extras }
         do {
             let r = try await bridge.request("preflight", args)
             let checks = (r["checks"] as? [[String: Any]] ?? []).compactMap { c -> PreflightCheck? in
@@ -136,19 +141,23 @@ final class UseLeRobot {
 
     /// En vivo: el follower se queda firme y va a los objetivos que se le manden (sin leader).
     func live(_ d: Device) async {
-        await startSession("live", base(d).merging(["camera": camera(d)]) { $1 })
+        await startSession("live", base(d).merging(["camera": camera(d), "extra_cameras": d.extras]) { $1 })
     }
 
     func liveTargets(_ targets: [String: Double]) async throws { _ = try await bridge.request("live_targets", ["targets": targets]) }
     func liveHome() async throws { _ = try await bridge.request("live_home") }
 
-    /// Una foto grande de la cámara mientras está en vivo (para la IA).
-    func liveLook() async throws -> Data {
+    /// Una foto grande de cada cámara mientras está en vivo (para la IA): [(cámara, JPEG)].
+    func liveLook() async throws -> [(camera: String, jpeg: Data)] {
         let r = try await bridge.request("live_look")
-        guard let jpeg = (r["jpeg"] as? String).flatMap({ Data(base64Encoded: $0) }) else {
-            throw NSError(domain: "Curiosity", code: 8, userInfo: [NSLocalizedDescriptionKey: "La cámara no entregó imagen."])
+        let photos = (r["images"] as? [[String: Any]] ?? []).compactMap { i -> (camera: String, jpeg: Data)? in
+            guard let c = i["camera"] as? String, let d = (i["jpeg"] as? String).flatMap({ Data(base64Encoded: $0) }) else { return nil }
+            return (c, d)
         }
-        return jpeg
+        guard !photos.isEmpty else {
+            throw NSError(domain: "Curiosity", code: 8, userInfo: [NSLocalizedDescriptionKey: "Las cámaras no entregaron imagen."])
+        }
+        return photos
     }
 
     func next() { Task { _ = try? await bridge.request("next") } }
@@ -164,6 +173,7 @@ final class UseLeRobot {
     private func startSession(_ kind: String, _ args: [String: Any]) async {
         error = nil
         frame = nil
+        frames = [:]
         if status != .ready { await start() }
         guard status == .ready else { return }
         session = RobotSession(kind: kind, phase: "starting", active: true)
@@ -178,7 +188,10 @@ final class UseLeRobot {
     private func handle(_ e: [String: Any]) {
         guard let kind = e["event"] as? String else { return }
         if kind == "frame" {
-            frame = (e["jpeg"] as? String).flatMap { Data(base64Encoded: $0) }
+            let data = (e["jpeg"] as? String).flatMap { Data(base64Encoded: $0) }
+            let camera = e["camera"] as? String ?? "front"
+            frames[camera] = data
+            if camera == "front" { frame = data }
             return
         }
         guard ["teleop", "record", "rollout", "live"].contains(kind) else { return }
@@ -194,7 +207,7 @@ final class UseLeRobot {
         s.limits = (e["limits"] as? [String: [NSNumber]] ?? [:]).compactMapValues { v in
             v.count == 2 && v[0].doubleValue <= v[1].doubleValue ? v[0].doubleValue...v[1].doubleValue : nil
         }
-        if s != session { session = s }
+        if s != session { session = s; onSession(s) }
         // Si terminó por un error, que se vea y diga qué hacer.
         if !s.active, let raw = s.error { error = LeRobotErrors.friendly(raw) }
     }

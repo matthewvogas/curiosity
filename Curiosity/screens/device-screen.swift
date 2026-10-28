@@ -192,7 +192,9 @@ struct DeviceScreen: View {
                     followers: lerobot.calibrations.followers, leaders: lerobot.calibrations.leaders,
                     otherPorts: devices.connectedPorts.filter { $0 != device.id }, cameras: lerobot.cameras,
                     followerID: bindDevice(\.followerID), leaderPort: bindDevice(\.leaderPort), leaderID: bindDevice(\.leaderID),
-                    cameraIndex: bindDevice(\.cameraIndex), snapshot: snapshot,
+                    cameraIndex: bindDevice(\.cameraIndex),
+                    extraCameras: Binding(get: { device.extras }, set: { v in devices.update(device.id) { $0.extraCameras = v } }),
+                    snapshot: snapshot,
                     onSnapshot: { Task { if let i = device.cameraIndex { snapshot = await lerobot.snapshot(i) } } })
             }
             .formStyle(.grouped)
@@ -223,7 +225,7 @@ struct DeviceScreen: View {
         checkPicture = nil
         checking = true
         Task {
-            let r = await lerobot.preflight(device, withLeader: action == .record)
+            let r = await lerobot.preflight(device, withLeader: action == .record, withExtras: action == .live)
             checks = r.checks
             checkPicture = r.picture
             checking = false

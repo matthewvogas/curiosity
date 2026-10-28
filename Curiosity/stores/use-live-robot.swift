@@ -2,16 +2,57 @@ import Foundation
 import Observation
 
 /// El robot real en vivo: conectarlo (se queda firme), moverlo con los controles o con la IA, y soltarlo
-/// (vuelve a su pose del principio). Es también el cuerpo del chat con el robot real.
+/// (vuelve a su pose del principio). Tiene un gemelo 3D que copia su pose, ve por todas sus cámaras y es
+/// también el cuerpo del chat con el robot real.
 @Observable
 final class UseLiveRobot {
     private let lerobot: UseLeRobot
     /// Objetivos de los deslizadores aún sin mandar (se juntan para no saturar el puente).
     private var outgoing: [String: Double] = [:]
     private var flushing = false
+    private var device: Device?
+    /// El SO-101 del simulador, quieto, puesto en la misma pose que el real.
+    let twin = SimulationQueries()
+    private var twinLoaded = false
 
     init(lerobot: UseLeRobot) {
         self.lerobot = lerobot
+        twin.onAttach = { [weak self] in Task { @MainActor in self?.loadTwin() } }
+        twin.onMessage = { [weak self] m in
+            guard let self, m["type"] as? String == "model" else { return }
+            self.twin.pause(true)   // sin física: solo copia la pose
+            self.twinLoaded = true
+            self.mirror(self.joints)
+        }
+        lerobot.onSession = { [weak self] s in if s.kind == "live" { self?.mirror(s.joints) } }
+    }
+
+    /// Las cámaras en vivo, con su nombre: la principal primero.
+    var cameras: [(key: String, name: String, frame: Data?)] {
+        guard isLive, let device else { return [] }
+        let names = Dictionary(lerobot.cameras.map { ($0.index, $0.name) }, uniquingKeysWith: { a, _ in a })
+        var out = [("front", device.cameraName ?? "Principal", lerobot.frames["front"])]
+        for (i, index) in device.extras.enumerated() {
+            out.append(("cam\(i + 1)", names[index] ?? "Cámara \(i + 2)", lerobot.frames["cam\(i + 1)"]))
+        }
+        return out
+    }
+
+    private func label(_ key: String) -> String { cameras.first { $0.key == key }?.name ?? key }
+
+    private func loadTwin() {
+        twinLoaded = false
+        guard let so101 = RobotQueries.bundled().first(where: { $0.id == "bundled.so101" }), let url = RobotQueries.fileURL(for: so101) else { return }
+        var profile = RobotQueries.readProfile(urdfURL: url)
+        profile["objects"] = []   // solo el brazo
+        twin.load(url: SimulationQueries.modelURL(for: so101), profile: profile)
+    }
+
+    /// Grados de LeRobot → radianes del URDF (la pinza, de 0–100 a su rango), como en el visor anterior.
+    private func mirror(_ joints: [String: Double]) {
+        guard twinLoaded, !joints.isEmpty else { return }
+        let q = joints.mapValues { $0 * .pi / 180 }.merging(["gripper": (joints["gripper"] ?? 0) / 100 * 1.74533]) { $1 }
+        twin.setTargets(q, snap: true)
     }
 
     var isLive: Bool { lerobot.session?.kind == "live" && lerobot.session?.active == true }
@@ -20,9 +61,11 @@ final class UseLiveRobot {
     var joints: [String: Double] { isLive ? lerobot.session?.joints ?? [:] : [:] }
     var targets: [String: Double] { isLive ? (lerobot.session?.targets ?? [:]).merging(outgoing) { $1 } : [:] }
     var limits: [String: ClosedRange<Double>] { isLive ? lerobot.session?.limits ?? [:] : [:] }
-    var frame: Data? { lerobot.frame }
 
-    func start(_ device: Device) async { await lerobot.live(device) }
+    func start(_ device: Device) async {
+        self.device = device
+        await lerobot.live(device)
+    }
     func stop() { lerobot.stop() }
 
     /// Desde un deslizador: el último valor de cada articulación, como mucho cada 50 ms.
@@ -90,7 +133,8 @@ extension UseLiveRobot: ChatBody {
             return .text(AgentTools.json(out), problem: clipped.isEmpty ? nil : "Ajustado al rango: \(clipped.joined(separator: ", "))")
 
         case "look":
-            return .image(try await lerobot.liveLook())
+            let photos = try await lerobot.liveLook()
+            return .images(photos.map { (photos.count > 1 ? label($0.camera) : "", $0.jpeg) })
 
         case "go_home":
             try await lerobot.liveHome()

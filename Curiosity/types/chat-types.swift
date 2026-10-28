@@ -35,7 +35,8 @@ protocol ChatBody: AnyObject {
 /// Lo que devuelve una herramienta: texto para la IA (y un aviso si algo no salió), o una imagen.
 enum ChatToolOutput {
     case text(String, problem: String? = nil)
-    case image(Data)
+    /// Fotos con su nombre (la cámara de donde salen; vacío si hay una sola).
+    case images([(label: String, jpeg: Data)])
 }
 
 /// Una conversación guardada con un robot: lo que se ve y la historia para seguirla con la API.

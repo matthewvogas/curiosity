@@ -180,6 +180,21 @@ def cmd_preflight(msg: dict) -> dict:
         else:
             detail = text
         checks.append({"key": "camera", "state": "fail", "detail": detail})
+
+    for i, index in enumerate(msg.get("extra_cameras") or [], start=1):
+        try:
+            from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
+
+            c = OpenCVCamera(OpenCVCameraConfig(index_or_path=int(index)))
+            c.connect()
+            try:
+                frame = c.read()
+            finally:
+                c.disconnect()
+            checks.append({"key": f"cam{i}", "state": "ok", "detail": f"Entrega imagen ({frame.shape[1]}×{frame.shape[0]})."})
+        except Exception as e:
+            checks.append({"key": f"cam{i}", "state": "fail",
+                           "detail": f"No respondió ({clean(e)}). Quítala en Ajustes del robot o revisa su cable."})
     return {"checks": checks, "jpeg": jpeg}
 
 
@@ -469,6 +484,18 @@ class Record(Session):
                 "elapsed": round(time.monotonic() - self.phase_t0, 1), "limit": self.phase_limit}
 
 
+def camera_configs(msg):
+    """La cámara principal («front», con su resolución fija) y las demás («cam1»…, como vengan)."""
+    from lerobot.cameras.opencv import OpenCVCameraConfig
+
+    cam = msg["camera"]
+    out = {"front": OpenCVCameraConfig(index_or_path=int(cam["index"]), width=int(cam["width"]),
+                                       height=int(cam["height"]), fps=int(cam["fps"]))}
+    for i, index in enumerate(msg.get("extra_cameras") or [], start=1):
+        out[f"cam{i}"] = OpenCVCameraConfig(index_or_path=int(index))
+    return out
+
+
 class Live(Session):
     """El robot en vivo, sin leader: se queda firme en su pose y va hacia los objetivos que mande la app
     (la persona con los controles, o la IA después de que la persona aprueba), a velocidad limitada.
@@ -498,25 +525,20 @@ class Live(Session):
                 self.targets = dict(self.start_pose)
 
     def look(self, width=768):
-        import cv2
-
+        """Una foto de cada cámara: [{camera, jpeg}]."""
         robot = self.robot
         if robot is None:
             raise ValueError("El robot no está conectado.")
-        bgr = cv2.cvtColor(robot.cameras["front"].read_latest(), cv2.COLOR_RGB2BGR)
-        bgr = cv2.resize(bgr, (width, int(width * bgr.shape[0] / bgr.shape[1])))
-        ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        return base64.b64encode(buf.tobytes()).decode()
+        return [{"camera": key, "jpeg": jpeg} for key in robot.cameras
+                if (jpeg := camera_frame(robot, key, width))]
 
     def run(self):
         from lerobot.cameras.opencv import OpenCVCameraConfig
         from lerobot.robots import make_robot_from_config
         from lerobot.robots.so_follower import SO101FollowerConfig
 
-        cam = self.msg["camera"]
         cfg = SO101FollowerConfig(port=self.msg["follower_port"], id=self.msg["follower_id"], use_degrees=True,
-                                  cameras={"front": OpenCVCameraConfig(index_or_path=int(cam["index"]), width=int(cam["width"]),
-                                                                       height=int(cam["height"]), fps=int(cam["fps"]))})
+                                  cameras=camera_configs(self.msg))
         robot = make_robot_from_config(cfg)
         try:
             robot.connect()
@@ -565,15 +587,16 @@ class Live(Session):
                 command[j] += max(-step, min(step, targets[j] - command[j]))
             robot.send_action({f"{j}.pos": command[j] for j in JOINTS})
             now = time.monotonic()
-            if now - last_emit > 0.2:
+            if now - last_emit > 0.1:  # 10 por segundo: el modelo 3D lo sigue suave
                 obs = robot.get_observation()
                 self.joints = joints_of(obs)
                 emit({"event": "live", **self.status(), "active": True})
                 last_emit = now
             if now - last_frame > 0.25:
-                jpeg = camera_frame(robot)
-                if jpeg:
-                    emit({"event": "frame", "jpeg": jpeg})
+                for key in robot.cameras:
+                    jpeg = camera_frame(robot, key)
+                    if jpeg:
+                        emit({"event": "frame", "camera": key, "jpeg": jpeg})
                 last_frame = now
             time.sleep(max(0.0, dt - (time.perf_counter() - t)))
 
@@ -584,17 +607,17 @@ class Live(Session):
                 "limits": {j: [round(lo, 1), round(hi, 1)] for j, (lo, hi) in self.limits.items()}}
 
 
-def camera_frame(robot):
-    """El último cuadro de la cámara del robot, chico y en JPEG (base64), o None."""
+def camera_frame(robot, key="front", width=480):
+    """El último cuadro de una cámara del robot, chico y en JPEG (base64), o None."""
     import cv2
 
     try:
-        rgb = robot.cameras["front"].read_latest()
+        rgb = robot.cameras[key].read_latest()
     except Exception:
         return None
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    bgr = cv2.resize(bgr, (480, int(480 * bgr.shape[0] / bgr.shape[1])))
-    ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    bgr = cv2.resize(bgr, (width, int(width * bgr.shape[0] / bgr.shape[1])))
+    ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 70 if width <= 480 else 80])
     return base64.b64encode(buf.tobytes()).decode() if ok else None
 
 
@@ -707,7 +730,7 @@ def handle(msg: dict) -> dict:
     if cmd == "live_look":
         if not (isinstance(current, Live) and current.active):
             raise ValueError("El robot no está en vivo.")
-        return {"jpeg": current.look()}
+        return {"images": current.look()}
     if cmd == "validate":
         # Revisa los argumentos sin conectar nada (para probar el puente).
         if msg.get("policy_path"):

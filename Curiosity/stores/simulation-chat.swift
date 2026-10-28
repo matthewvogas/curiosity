@@ -38,7 +38,7 @@ extension UseSimulation: ChatBody {
 
         case "look":
             let camera = (input["camera"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            return .image(try await capture(camera: camera))
+            return .images([("", try await capture(camera: camera))])
 
         case "add_object":
             let size = Units.meters((input["size_cm"] as? [NSNumber] ?? []).map(\.doubleValue))
