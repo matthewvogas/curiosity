@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Un robot real (SO-101). Lo principal: enseñarle una tarea en tres pasos (demostraciones, entrenar,
 /// probar). Lo secundario va en la toolbar: moverlo con el leader y sus ajustes. Todo lo que mueve el
-/// robot pide confirmación; los valores por defecto se pueden cambiar en «Opciones» de cada paso.
+/// robot pide confirmación; los valores por defecto se cambian en el inspector de la tarea.
 struct DeviceScreen: View {
     let device: Device
     @Environment(UseDevices.self) private var devices
@@ -16,6 +16,7 @@ struct DeviceScreen: View {
     @State private var showingSettings = false
     @State private var showingHub = false
     @State private var snapshot: Data?
+    @State private var showingOptions = false
 
     var body: some View {
         content
@@ -23,6 +24,9 @@ struct DeviceScreen: View {
             .navigationTitle(device.name.isEmpty ? (device.guess ?? "SO-101") : device.name)
             .navigationSubtitle(subtitle)
             .toolbar { toolbar }
+            .inspector(isPresented: Binding(get: { showingOptions && openTask != nil }, set: { showingOptions = $0 })) {
+                if let task = openTask { taskOptions(task).inspectorColumnWidth(min: 260, ideal: 300, max: 380) }
+            }
             .task { await lerobot.start(); applyDefaults(); await datasets.load() }
             .onChange(of: lerobot.status) { applyDefaults() }
             .onChange(of: lerobot.session?.active) { _, active in if active == false { Task { await datasets.load() } } }
@@ -45,7 +49,7 @@ struct DeviceScreen: View {
         } else if let s = lerobot.session, s.active, s.kind == "rollout" {
             RunningView(session: s, frame: lerobot.frame, onStop: lerobot.stop)
         } else if let task = tasks.selected(for: device.id) {
-            ScrollView { taskFlow(task).padding(Theme.Space.xxl) }
+            taskPage(task)
         } else if tasks.tasks(for: device.id).isEmpty {
             TaskEmptyState { title in tasks.add(title: title, deviceID: device.id) }
         } else {
@@ -75,110 +79,60 @@ struct DeviceScreen: View {
         }
     }
 
-    private func taskFlow(_ task: TeachTask) -> some View {
-        let demos = demosRecorded(task)
-        let job = trainingJob(task)
-        let progress = job.flatMap { training.progress[$0.name] }
-        let hasModel = progress?.hasModel == true
-        let training_ = progress?.running == true
-        return VStack(alignment: .leading, spacing: Theme.Space.l) {
-            taskHeader(task)
-            if let note = notice { Text(note).font(.callout).foregroundStyle(Theme.red) }
-
-            // 1. Demostraciones
-            StepCard(number: 1, title: "Mostrarle la tarea", state: task.hubDataset || demos >= task.episodes ? .done : .current,
-                     status: task.hubDataset ? "Usa las demostraciones de \(task.dataset) (Hugging Face)."
-                           : demos == 0 ? "Graba \(task.episodes) demostraciones con el leader, de unos \(Int(task.episodeSeconds)) s cada una."
-                           : "\(demos) de \(task.episodes) demostraciones grabadas.",
-                     help: "Mueves el leader y el follower hace la tarea; LeRobot guarda la cámara y los movimientos. Varía un poco la posición de los objetos entre demostraciones.") {
-                HStack {
-                    if task.hubDataset {
-                        Button("Grabar las mías en su lugar") { tasks.update(task.id) { $0.hubDataset = false; $0.dataset = Naming.slug($0.title) } }
-                    } else {
-                        Button(demos == 0 ? "Grabar demostraciones" : "Seguir grabando") { confirm = .record }
-                            .prominent(demos < task.episodes)
-                            .disabled(!device.canRecord || lerobot.isBusy)
-                            .help(device.canRecord ? "Graba \(task.episodes - demos) más (→ terminar, ← repetir, Esc guardar)" : "Configura el leader y la cámara en Ajustes del robot")
-                        Button("o usar datos de Hugging Face") { showingHub = true; Task { if datasets.hub.isEmpty { await datasets.search() } } }
-                            .buttonStyle(.link)
-                    }
-                }
-                if !device.canRecord && !task.hubDataset {
-                    Button("Configura el leader y la cámara") { showingSettings = true }.buttonStyle(.link).font(.callout)
-                }
-            } options: {
-                Stepper("Demostraciones: \(task.episodes)", value: bind(task, \.episodes), in: 5...300, step: 5)
-                    .help("Más demostraciones, más variadas, suelen ayudar más que entrenar más tiempo.")
-                Stepper("Hasta \(Int(task.episodeSeconds)) s cada una", value: bind(task, \.episodeSeconds), in: 10...300, step: 5)
-                Stepper("\(Int(task.resetSeconds)) s para reacomodar", value: bind(task, \.resetSeconds), in: 0...120, step: 5)
-            }
-
-            // 2. Entrenar
-            StepCard(number: 2, title: "Entrenarlo",
-                     state: hasModel && !training_ ? .done : (demos > 0 || task.hubDataset) ? .current : .waiting,
-                     status: trainStatus(task, demos: demos, progress: progress),
-                     help: "Una red aprende a imitar tus demostraciones. Corre en tu Mac, aunque cierres la app; déjala enchufada.") {
-                if training_, let p = progress {
-                    ProgressView(value: p.fraction)
-                    Button("Detener") { if let job { training.stop(job) } }
-                } else {
-                    Button(hasModel ? "Entrenar de nuevo" : "Entrenar · \(eta(task))") { startTraining(task) }
-                        .prominent(!hasModel && (demos >= task.episodes || task.hubDataset))
-                        .disabled(demos == 0 && !task.hubDataset)
-                        .help("\(policyName(task.policy)), \(task.steps.formatted()) pasos")
-                }
-            } options: {
-                Picker("Modelo", selection: bind(task, \.policy)) {
-                    ForEach(PolicyOption.all) { p in
-                        Text(p.needsSmolVLA && lerobot.env?.smolvla != true ? "\(p.name) (falta instalar)" : p.name).tag(p.id)
-                    }
-                }
-                .help(PolicyOption.all.first { $0.id == task.policy }?.detail ?? "")
-                Stepper("Pasos: \(task.steps.formatted())", value: bind(task, \.steps), in: 1000...200_000, step: 1000)
-                    .help("Cuántas veces ajusta la red. 20 000 es un buen punto de partida para ACT.")
-                Stepper("Lote: \(task.batchSize)", value: bind(task, \.batchSize), in: 1...64)
-                    .help("Ejemplos por paso. Más grande, más memoria.")
-            }
-
-            // 3. Probar
-            StepCard(number: 3, title: "Que lo haga solo", state: hasModel ? .current : .waiting,
-                     status: hasModel ? "El robot hace la tarea con lo que aprendió, durante \(Int(task.runSeconds)) s."
-                                      : "Disponible cuando termine el entrenamiento.",
-                     help: "El robot se mueve solo. Quédate cerca de la fuente; Esc lo detiene y vuelve a su pose inicial.") {
-                Button("Probar en el robot") { runJob = nil; confirm = .run }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!device.canRunPolicy || lerobot.isBusy || !hasModel)
-            } options: {
-                Stepper("Durante \(Int(task.runSeconds)) s", value: bind(task, \.runSeconds), in: 10...600, step: 10)
-            }
+    private func taskPage(_ task: TeachTask) -> some View {
+        let s = status(task)
+        let dataset = datasets.local.first { $0.source == (task.hubDataset ? "hub" : "local") && $0.name == task.dataset }
+        let stage: TaskStage = s.isTraining ? .train : s.hasModel ? .test
+            : (task.hubDataset || s.demos >= task.episodes) ? .train : .demos
+        let blocker: String? = switch stage {
+        case .demos: device.canRecord ? nil : "Falta elegir el leader o la cámara."
+        case .test: device.canRunPolicy ? nil : "Falta elegir la cámara."
+        case .train: nil
         }
-        .frame(maxWidth: 680)
-        .frame(maxWidth: .infinity)
+        let info = TaskPageInfo(
+            title: task.title,
+            subtitle: "\(device.name.isEmpty ? (device.guess ?? "SO-101") : device.name) · creada el \(task.createdAt.formatted(date: .long, time: .omitted))",
+            stage: stage, demos: s.demos, target: task.episodes, hubDataset: task.hubDataset ? task.dataset : nil,
+            recordedMinutes: dataset.flatMap { d in d.fps.map { Double(d.frames) / $0 / 60 } }, fps: dataset?.fps,
+            datasetName: task.dataset, policyName: policyName(task.policy), steps: task.steps, eta: eta(task),
+            progress: s.progress, hasModel: s.hasModel, runSeconds: Int(task.runSeconds), episodeSeconds: Int(task.episodeSeconds),
+            cameraName: device.cameraName, picture: snapshot, blocker: blocker, busy: lerobot.isBusy, notice: notice)
+        let actions = TaskPageActions(
+            onBack: { tasks.selectedID = nil },
+            onRemove: { tasks.remove(task.id) },
+            onRecord: { confirm = .record },
+            onHub: openHub,
+            onTrain: { startTraining(task) },
+            onStopTraining: { if let job = s.job { training.stop(job) } },
+            onRun: { runJob = nil; confirm = .run },
+            onFixSetup: { showingSettings = true },
+            onRefreshPicture: refreshPicture,
+            onRevealData: { if let d = dataset { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: d.root)]) } },
+            onShowLog: { if let job = s.job { NSWorkspace.shared.open(URL(fileURLWithPath: job.log)) } })
+        return TaskPage(info: info, actions: actions)
+            .task(id: task.id) { refreshPicture() }
     }
 
-    private func taskHeader(_ task: TeachTask) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Button { tasks.selectedID = nil } label: {
-                    Label("Todas las tareas", systemImage: "chevron.left").font(.caption)
-                }
-                .buttonStyle(.link)
-                .help("Volver al resumen del robot")
-                Text(task.title).font(.title2.weight(.semibold))
-            }
-            Spacer()
-            Menu {
-                Button("Quitar esta tarea", role: .destructive) { tasks.remove(task.id) }
-            } label: {
-                Icon(name: .more, size: 16)
-            }
-            .menuStyle(.button)
-            .buttonStyle(.borderless)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Más")
-            .accessibilityLabel("Más opciones de la tarea")
-        }
+    private func taskOptions(_ task: TeachTask) -> some View {
+        TaskOptionsForm(
+            episodes: bind(task, \.episodes), episodeSeconds: bind(task, \.episodeSeconds), resetSeconds: bind(task, \.resetSeconds),
+            policy: bind(task, \.policy), steps: bind(task, \.steps), batchSize: bind(task, \.batchSize), runSeconds: bind(task, \.runSeconds),
+            policies: PolicyOption.all.map { p in
+                (p.id, p.needsSmolVLA && lerobot.env?.smolvla != true ? "\(p.name) (falta instalar)" : p.name, p.detail)
+            },
+            dataset: task.hubDataset ? task.dataset : "local/\(task.dataset)", usesHub: task.hubDataset,
+            onUseHub: openHub,
+            onUseOwn: { tasks.update(task.id) { $0.hubDataset = false; $0.dataset = Naming.slug($0.title) } })
+    }
+
+    private func openHub() {
+        showingHub = true
+        Task { if datasets.hub.isEmpty { await datasets.search() } }
+    }
+
+    private func refreshPicture() {
+        guard let i = device.cameraIndex, lerobot.status == .ready, !lerobot.isBusy else { return }
+        Task { snapshot = await lerobot.snapshot(i) }
     }
 
     @State private var runJob: String?
@@ -197,6 +151,12 @@ struct DeviceScreen: View {
                     .labelStyle(.titleAndIcon)
                     .disabled(!device.canTeleoperate || lerobot.isBusy)
                     .help(device.canTeleoperate ? "El follower copia al leader. No graba nada." : "Configura el leader en Ajustes del robot")
+            }
+        }
+        if openTask != nil {
+            ToolbarItem(placement: .primaryAction) {
+                Button { showingOptions.toggle() } label: { Label("Opciones de la tarea", systemImage: IconName.sliders.rawValue) }
+                    .help("Demostraciones, modelo, pasos y duración de la prueba")
             }
         }
         ToolbarItem(placement: .primaryAction) {
@@ -291,23 +251,17 @@ struct DeviceScreen: View {
 
     // MARK: - Estado
 
+    private var openTask: TeachTask? {
+        guard lerobot.session?.active != true || lerobot.session?.kind == "teleop" else { return nil }
+        return tasks.selected(for: device.id)
+    }
+
     private func demosRecorded(_ task: TeachTask) -> Int { status(task).demos }
 
     private func trainingJob(_ task: TeachTask) -> TrainJob? { status(task).job }
 
     private func status(_ task: TeachTask) -> TaskStatus {
         TaskStatus.of(task, datasets: datasets.local, jobs: training.jobs, progress: training.progress)
-    }
-
-    private func trainStatus(_ task: TeachTask, demos: Int, progress: TrainProgress?) -> String {
-        if let p = progress {
-            if p.running { return "Entrenando: paso \(p.step.formatted()) de \((p.total ?? task.steps).formatted())\(p.remaining.map { ", faltan \($0)" } ?? "")." }
-            if p.hasModel { return "Modelo listo." }
-            if let e = p.error { return "Se detuvo: \(e)" }
-        }
-        if demos == 0 && !task.hubDataset { return "Primero graba las demostraciones." }
-        if !task.hubDataset && demos < task.episodes { return "Puedes entrenar ya con \(demos), pero con \(task.episodes) aprende mejor." }
-        return "Listo para entrenar con \(policyName(task.policy))."
     }
 
     private func eta(_ task: TeachTask) -> String {

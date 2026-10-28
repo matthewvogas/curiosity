@@ -78,58 +78,6 @@ struct TaskEmptyState: View {
     }
 }
 
-/// Estado de un paso del recorrido.
-enum StepState { case done, current, waiting }
-
-/// Un paso: número, título, una línea de estado, la acción principal y sus opciones (plegadas).
-struct StepCard<Actions: View, Options: View>: View {
-    let number: Int
-    let title: String
-    let state: StepState
-    let status: String
-    let help: String
-    @ViewBuilder var actions: Actions
-    @ViewBuilder var options: Options
-    @State private var showOptions = false
-
-    var body: some View {
-        HStack(alignment: .top, spacing: Theme.Space.m) {
-            ZStack {
-                Circle().fill(state == .waiting ? Theme.fill : Theme.ink.opacity(state == .done ? 0.12 : 0.9))
-                if state == .done {
-                    Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.ink)
-                } else {
-                    Text("\(number)").font(.callout.weight(.semibold))
-                        .foregroundStyle(state == .current ? Color(nsColor: .windowBackgroundColor) : Theme.muted)
-                }
-            }
-            .frame(width: 28, height: 28)
-
-            VStack(alignment: .leading, spacing: Theme.Space.s) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(title).font(.headline).foregroundStyle(state == .waiting ? Theme.muted : Theme.ink)
-                    Image(systemName: "questionmark.circle").font(.caption).foregroundStyle(Theme.faint).help(help)
-                    Spacer()
-                    Button(showOptions ? "Ocultar opciones" : "Opciones") { withAnimation(.snappy) { showOptions.toggle() } }
-                        .buttonStyle(.link).font(.caption)
-                }
-                Text(status).font(.callout).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
-                if state != .waiting { actions }
-                if showOptions {
-                    VStack(alignment: .leading, spacing: Theme.Space.s) { options }
-                        .padding(Theme.Space.m)
-                        .background(Theme.fill, in: .rect(cornerRadius: Theme.Radius.card))
-                        .controlSize(.small)
-                }
-            }
-        }
-        .padding(Theme.Space.l)
-        .background(state == .current ? Theme.selection : .clear, in: .rect(cornerRadius: Theme.Radius.card + 4))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card + 4).strokeBorder(Theme.hairline))
-        .opacity(state == .waiting ? 0.7 : 1)
-    }
-}
-
 /// Grabando: la cámara grande, el contador y tres botones con su tecla.
 struct RecordingView: View {
     let session: RobotSession
@@ -255,12 +203,5 @@ struct LivePicture: View {
             }
         }
         .clipShape(.rect(cornerRadius: 14))
-    }
-}
-
-extension View {
-    /// La acción principal del momento va destacada; las demás, normales.
-    @ViewBuilder func prominent(_ on: Bool) -> some View {
-        if on { buttonStyle(.borderedProminent) } else { buttonStyle(.bordered) }
     }
 }
