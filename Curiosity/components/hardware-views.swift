@@ -15,7 +15,7 @@ struct HardwareTestView: View {
     let onTest: () -> Void
 
     var body: some View {
-        Form {
+        Group {
             Section {
                 TextField("Nombre", text: $name, prompt: Text(placeholder))
                 LabeledContent("Puerto", value: port.replacingOccurrences(of: "/dev/", with: ""))
@@ -54,6 +54,5 @@ struct HardwareTestView: View {
                 }
             }
         }
-        .formStyle(.grouped)
     }
 }

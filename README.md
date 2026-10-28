@@ -9,9 +9,12 @@ pides tareas en tus palabras: la IA mira la escena, planea y mueve el robot en u
   el robot, objetos libres, pausa, paso a paso y velocidad.
 - **IA**: Claude con herramientas (`get_state`, `move_joints`, `look`, `add_object`, `remove_object`,
   `reset`). La API key se guarda en el Llavero. Las conversaciones se guardan por robot (Historial, en el chat).
-- **Robots conectados**: cada robot físico enchufado por USB aparece solo en la barra lateral («Conectados»),
-  aparte de los modelos simulados. Se prueba a pedido (puerto, Feetech o Dynamixel, qué motores responden),
-  sin mover nada.
+- **Robots reales** (por ahora el SO-101): se agregan con «Conectar robot externo». Desde la app, con tu
+  instalación de LeRobot: probar la conexión, elegir calibraciones, leader y cámara, teleoperar, grabar
+  datasets, buscar datasets en Hugging Face, entrenar (ACT, Diffusion, SmolVLA) y probar el modelo en el robot.
+  Lo hace un puente interno (`resources/bridge/curiosity_bridge.py`) que corre con el Python de LeRobot y
+  habla con la app por líneas JSON. Los entrenamientos corren aparte con `lerobot-train` y siguen aunque se
+  cierre la app. Datos y modelos en Application Support/Curiosity.
   Configurar, calibrar, teleoperar y entrenar se hace con LeRobot en la terminal.
 - **Robots**: el SO-101 viene incluido; cualquier URDF o MJCF se importa con sus mallas STL, OBJ o DAE; y la
   **biblioteca** trae 67 robots de MuJoCo Menagerie (brazos, pinzas, manos, cuadrúpedos, humanoides, móviles,

@@ -76,12 +76,24 @@ nonisolated struct FoundMotor: Identifiable, Equatable, Codable, Sendable {
 
 /// Un robot físico conectado por USB (un adaptador serie). Su id es el puerto.
 struct Device: Identifiable, Codable, Equatable {
-    var id: String              // /dev/cu.usbmodem…
+    var id: String              // /dev/cu.usbmodem… (el follower)
     var name: String
     var bus: BusProtocol = .feetech
     var baud = 1_000_000
     var found: [FoundMotor] = []
     var probedAt: Date?
+    /// Nombre de la calibración del follower en LeRobot (--robot.id).
+    var followerID: String?
+    /// El leader (el brazo que mueves con la mano): su puerto y su calibración (--teleop.id).
+    var leaderPort: String?
+    var leaderID: String?
+    /// La cámara para grabar y para los modelos (índice de OpenCV) y su nombre, para reconocerla.
+    var cameraIndex: Int?
+    var cameraName: String?
+
+    var canTeleoperate: Bool { followerID != nil && leaderPort != nil && leaderID != nil }
+    var canRecord: Bool { canTeleoperate && cameraIndex != nil }
+    var canRunPolicy: Bool { followerID != nil && cameraIndex != nil }
 
     /// Lo que se ve en la lista cuando nadie le puso nombre.
     var portName: String { id.replacingOccurrences(of: "/dev/cu.", with: "") }

@@ -17,11 +17,18 @@ struct CuriosityApp: App {
     @State private var chat: UseChat
     @State private var library: UseLibrary
     @State private var devices = UseDevices()
+    @State private var lerobot: UseLeRobot
+    @State private var datasets: UseDatasets
+    @State private var training: UseTraining
 
     init() {
         let settings = UseSettings()
         let simulation = UseSimulation()
         _settings = State(initialValue: settings)
+        let lerobot = UseLeRobot(settings: settings)
+        _lerobot = State(initialValue: lerobot)
+        _datasets = State(initialValue: UseDatasets(lerobot: lerobot, settings: settings))
+        _training = State(initialValue: UseTraining(settings: settings))
         let robots = UseRobots()
         _robots = State(initialValue: robots)
         _library = State(initialValue: UseLibrary(robots: robots))
@@ -47,6 +54,9 @@ struct CuriosityApp: App {
                 .environment(chat)
                 .environment(library)
                 .environment(devices)
+                .environment(lerobot)
+                .environment(datasets)
+                .environment(training)
                 .frame(minWidth: 1000, minHeight: 640)
         }
         .defaultSize(width: 1440, height: 900)

@@ -1,10 +1,16 @@
 import SwiftUI
 import Observation
 
-/// Ajustes de IA: la API key (en el Llavero) y qué modelo usar.
+/// Ajustes: la IA (API key en el Llavero y modelo), LeRobot (su Python) y Hugging Face (token en el Llavero).
 @Observable
 final class UseSettings {
     private static let anthropicAccount = "anthropic-api-key"
+    private static let hubAccount = "huggingface-token"
+    private static let defaultPython = FileManager.default.homeDirectoryForCurrentUser.path + "/Code/bot/lerobot/.venv/bin/python"
+
+    /// El Python donde está instalado LeRobot (el de su entorno virtual).
+    var lerobotPython: String { didSet { UserDefaults.standard.set(lerobotPython, forKey: "lerobot.python") } }
+    private(set) var hasHubToken = false
 
     private(set) var hasAnthropicKey = false
     var modelID: String { didSet { UserDefaults.standard.set(modelID, forKey: "ai.model") } }
@@ -17,6 +23,22 @@ final class UseSettings {
         modelID = UserDefaults.standard.string(forKey: "ai.model") ?? AIModel.all[0].id
         effort = UserDefaults.standard.string(forKey: "ai.effort") ?? "medium"
         hasAnthropicKey = KeychainQueries.read(Self.anthropicAccount) != nil
+        lerobotPython = UserDefaults.standard.string(forKey: "lerobot.python") ?? Self.defaultPython
+        hasHubToken = KeychainQueries.read(Self.hubAccount) != nil
+    }
+
+    var hubToken: String? { KeychainQueries.read(Self.hubAccount) }
+
+    func saveHubToken(_ token: String) {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        KeychainQueries.save(Self.hubAccount, value: trimmed)
+        hasHubToken = true
+    }
+
+    func removeHubToken() {
+        KeychainQueries.delete(Self.hubAccount)
+        hasHubToken = false
     }
 
     var anthropicKey: String? { KeychainQueries.read(Self.anthropicAccount) }

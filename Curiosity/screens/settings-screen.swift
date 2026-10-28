@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsScreen: View {
     @Environment(UseSettings.self) private var settings
     @State private var keyDraft = ""
+    @State private var hubDraft = ""
 
     var body: some View {
         @Bindable var settings = settings
@@ -44,6 +45,29 @@ struct SettingsScreen: View {
                 Text("Claude")
             } footer: {
                 Text("La key se guarda en el Llavero de tu Mac y solo se envía a api.anthropic.com. Consíguela en console.anthropic.com.")
+                    .foregroundStyle(Theme.muted)
+            }
+
+            Section {
+                TextField("Python de LeRobot", text: $settings.lerobotPython)
+                LabeledContent("Hugging Face") {
+                    if settings.hasHubToken {
+                        HStack {
+                            Text("Token guardado").foregroundStyle(Theme.muted)
+                            Button("Quitar", role: .destructive) { settings.removeHubToken() }
+                        }
+                    } else {
+                        HStack {
+                            SecureField("hf_…", text: $hubDraft).frame(minWidth: 220)
+                            Button("Guardar") { settings.saveHubToken(hubDraft); hubDraft = "" }
+                                .disabled(hubDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                        }
+                    }
+                }
+            } header: {
+                Text("Robots reales")
+            } footer: {
+                Text("Para teleoperar, grabar y entrenar, la app usa tu instalación de LeRobot. El token de Hugging Face (huggingface.co/settings/tokens, con permiso de escritura) sirve para subir datasets y bajar los privados; se guarda en el Llavero.")
                     .foregroundStyle(Theme.muted)
             }
         }
