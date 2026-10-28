@@ -496,6 +496,14 @@ def native_camera_config(index):
             raise ValueError(f"No se pudo abrir la cámara {index}.")
         w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(round(cap.get(cv2.CAP_PROP_FPS) or 30))
+        if h > w:
+            # Algunas (p. ej. la Osmo) entregan un cuadro vertical con la imagen horizontal al centro y franjas
+            # negras: pidiendo el formato horizontal llega la imagen completa.
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, h)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, w)
+            w2, h2 = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if w2 > h2:
+                w, h = w2, h2
         if w > 1280:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, round(1280 * h / w))
@@ -654,6 +662,15 @@ class Live(Session):
                 "limits": {j: [round(lo, 1), round(hi, 1)] for j, (lo, hi) in self.limits.items()}}
 
 
+def trim_bars(img, dark=12):
+    """Quita las franjas negras de los bordes (imagen metida en un cuadro de otra forma)."""
+    rows = (img.mean(axis=(1, 2)) > dark).nonzero()[0]
+    cols = (img.mean(axis=(0, 2)) > dark).nonzero()[0]
+    if len(rows) < img.shape[0] * 0.2 or len(cols) < img.shape[1] * 0.2:
+        return img  # casi todo oscuro: es la escena, no franjas
+    return img[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+
+
 def camera_frame(robot, key="front", width=480):
     """El último cuadro de una cámara del robot, chico y en JPEG (base64), o None."""
     import cv2
@@ -662,7 +679,7 @@ def camera_frame(robot, key="front", width=480):
         rgb = robot.cameras[key].read_latest()
     except Exception:
         return None
-    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    bgr = trim_bars(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
     bgr = cv2.resize(bgr, (width, int(width * bgr.shape[0] / bgr.shape[1])))
     ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 70 if width <= 480 else 80])
     return base64.b64encode(buf.tobytes()).decode() if ok else None
