@@ -105,7 +105,7 @@ private struct SidebarHeader: View {
         HStack {
             Button(action: onToggle) {
                 HStack(spacing: 6) {
-                    Text(title).font(.title3.weight(.semibold))
+                    Text(title).font(.headline)
                     Icon(name: .chevron, size: 10, weight: .semibold)
                         .rotationEffect(.degrees(collapsed ? 0 : 90))
                         .opacity(hoveringTitle || collapsed ? 1 : 0)
@@ -118,7 +118,7 @@ private struct SidebarHeader: View {
             .help(collapsed ? "Mostrar" : "Ocultar")
             Spacer()
             if let onAdd { Button(action: onAdd) {
-                Icon(name: .add, size: 14, weight: .semibold)
+                Icon(name: .add, size: 13, weight: .semibold)
                     .frame(width: 22, height: 22, alignment: .trailing)
                     .contentShape(.rect)
             }
