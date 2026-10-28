@@ -28,9 +28,6 @@ final class UseDevices {
 
     init() {
         refresh()
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["CURIOSITY_SELECT_DEVICE"] != nil { selectedID = devices.first?.id }
-        #endif
         watcher = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
@@ -83,5 +80,4 @@ final class UseDevices {
         }
     }
 
-    func resetProbe() { if !isProbing { probe = .idle } }
 }

@@ -283,7 +283,7 @@ struct DeviceScreen: View {
             // La cámara se recuerda por nombre (los números cambian al enchufar otra).
             if d.cameraName == nil, let i = d.cameraIndex { d.cameraName = lerobot.cameras.first { $0.index == i }?.name }
             if d.cameraIndex == nil {
-                let external = lerobot.cameras.first { !$0.name.contains("MacBook") && !$0.name.contains("iPhone") }
+                let external = lerobot.cameras.first(where: \.external)
                 d.cameraIndex = (external ?? lerobot.cameras.first)?.index
                 d.cameraName = (external ?? lerobot.cameras.first)?.name
             }

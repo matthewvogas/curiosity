@@ -9,7 +9,7 @@ Hace lo mismo que los comandos de LeRobot, con su mismo código:
   lerobot-teleoperate   → cmd "teleop"
   lerobot-record        → cmd "record" (demostraciones con el leader)
   lerobot-rollout       → cmd "rollout" (el robot usa un modelo entrenado)
-y además: calibraciones guardadas, cámaras, una foto de prueba y los datasets locales.
+y además: calibraciones guardadas, una foto de prueba, la revisión previa, el estudio de datasets y los locales.
 Una sola sesión con el robot a la vez. Nada se mueve sin una orden de la app, que antes pide
 confirmación a la persona.
 """
@@ -21,7 +21,6 @@ import shutil
 import sys
 import threading
 import time
-import traceback
 from pathlib import Path
 
 _out_lock = threading.Lock()
@@ -70,24 +69,6 @@ def cmd_calibrations(_: dict) -> dict:
             if ids:
                 out[kind][d.name] = ids
     return out
-
-
-def camera_names() -> list[str]:
-    """Cámaras en el orden en que OpenCV las numera en macOS (ordenadas por uniqueID)."""
-    try:
-        import AVFoundation as AVF
-
-        types = [AVF.AVCaptureDeviceTypeBuiltInWideAngleCamera, AVF.AVCaptureDeviceTypeExternal]
-        session = AVF.AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes_mediaType_position_(
-            types, AVF.AVMediaTypeVideo, AVF.AVCaptureDevicePositionUnspecified)
-        devices = sorted(session.devices(), key=lambda d: str(d.uniqueID()))
-        return [str(d.localizedName()) for d in devices]
-    except Exception:
-        return []
-
-
-def cmd_cameras(_: dict) -> dict:
-    return {"cameras": [{"index": i, "name": n} for i, n in enumerate(camera_names())]}
 
 
 def cmd_snapshot(msg: dict) -> dict:
@@ -260,7 +241,7 @@ def cmd_study(msg: dict) -> dict:
                     ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 75])
                     keyframes.append({"episode": int(e), "label": label, "jpeg": base64.b64encode(buf.tobytes()).decode()})
                 except Exception:
-                    traceback.print_exc(file=sys.stderr)
+                    pass  # una que no se pudo leer se omite
     return {"repo_id": repo_id, "fps": meta.fps, "robot_type": meta.robot_type, "total_episodes": total,
             "tasks": list(tasks.values())[:10], "cameras": video_keys, "units": "grados" if degrees else "convertido a grados con la calibración de este robot",
             "episodes": out_eps, "keyframes": keyframes}
@@ -323,13 +304,6 @@ def cmd_datasets(msg: dict) -> dict:
     return {"datasets": out}
 
 
-def cmd_push_dataset(msg: dict) -> dict:
-    from lerobot.datasets import LeRobotDataset
-
-    LeRobotDataset(msg["repo_id"], root=msg["root"]).push_to_hub(private=bool(msg.get("private", True)))
-    return {"url": f"https://huggingface.co/datasets/{msg['repo_id']}"}
-
-
 def cmd_delete_dataset(msg: dict) -> dict:
     root = Path(msg["root"])
     if not (root / "meta" / "info.json").exists():
@@ -371,7 +345,6 @@ class Session:
         except Exception as e:
             self.error = clean(e)
             self.phase = "error"
-            traceback.print_exc(file=sys.stderr)
         finally:
             emit({"event": self.kind, **self.status(), "active": False})
 
@@ -879,8 +852,8 @@ class Rollout(Session):
 # Bucle principal
 # ---------------------------------------------------------------------------------------------
 current: Session | None = None
-QUERIES = {"hello": cmd_hello, "calibrations": cmd_calibrations, "cameras": cmd_cameras, "snapshot": cmd_snapshot, "preflight": cmd_preflight, "study": cmd_study,
-           "datasets": cmd_datasets, "push_dataset": cmd_push_dataset, "delete_dataset": cmd_delete_dataset}
+QUERIES = {"hello": cmd_hello, "calibrations": cmd_calibrations, "snapshot": cmd_snapshot, "preflight": cmd_preflight, "study": cmd_study,
+           "datasets": cmd_datasets, "delete_dataset": cmd_delete_dataset}
 SESSIONS = {"teleop": Teleop, "record": Record, "rollout": Rollout, "live": Live}
 
 
@@ -914,16 +887,6 @@ def handle(msg: dict) -> dict:
         if not (isinstance(current, Live) and current.active):
             raise ValueError("El robot no está en vivo.")
         return {"images": current.look()}
-    if cmd == "validate":
-        # Revisa los argumentos sin conectar nada (para probar el puente).
-        if msg.get("policy_path"):
-            Rollout(msg).config()
-        else:
-            import draccus
-            from lerobot.scripts import lerobot_record as lr
-
-            draccus.parse(lr.RecordConfig, args=Record(msg).record_args())
-        return {}
     raise ValueError(f"Orden desconocida: {cmd}")
 
 
@@ -936,29 +899,7 @@ def preload():
     from lerobot.scripts import lerobot_record, lerobot_rollout, lerobot_teleoperate  # noqa: F401
 
 
-class _Tee:
-    """Copia stderr a un archivo: lo que LeRobot escribe queda en logs/bridge.log."""
-
-    def __init__(self, *streams):
-        self.streams = streams
-
-    def write(self, text):
-        for s in self.streams:
-            s.write(text)
-            s.flush()
-        return len(text)
-
-    def flush(self):
-        for s in self.streams:
-            s.flush()
-
-
 def main():
-    import os
-
-    if os.environ.get("CURIOSITY_LOG"):
-        sys.stderr = _Tee(sys.__stderr__, open(os.environ["CURIOSITY_LOG"], "a", buffering=1))
-        sys.stderr.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
     preload()
     emit({"event": "ready"})
     for line in sys.stdin:
@@ -977,7 +918,6 @@ def main():
             except SystemExit:  # draccus sale así cuando un argumento no le sirve
                 emit({"id": rid, "ok": False, "error": "LeRobot no aceptó la configuración (revisa los datos)."})
             except Exception as e:
-                traceback.print_exc(file=sys.stderr)
                 emit({"id": rid, "ok": False, "error": clean(e)})
 
         # Las consultas lentas (subir al Hub, una foto) no deben trabar las órdenes de parar.

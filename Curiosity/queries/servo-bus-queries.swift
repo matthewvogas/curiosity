@@ -45,12 +45,6 @@ actor ServoBus {
 
     func readPosition(_ id: Int) -> Int? { read(id, bus.registers.present) }
 
-    func readPositions(_ ids: [Int]) -> [Int: Int] {
-        var out: [Int: Int] = [:]
-        for id in ids { if let p = readPosition(id) { out[id] = p } }
-        return out
-    }
-
     // MARK: - Registros
 
     private func read(_ id: Int, _ register: (UInt16, Int)) -> Int? {

@@ -17,22 +17,6 @@ nonisolated enum BusProtocol: String, Codable, CaseIterable, Identifiable, Senda
         }
     }
 
-    var example: String {
-        switch self {
-        case .feetech: "SO-100, SO-101, LeKiwi"
-        case .dynamixel2: "Koch, ALOHA, X-series"
-        case .dynamixel1: "AX-12, MX-28"
-        }
-    }
-
-    var defaultBaud: Int {
-        switch self {
-        case .feetech: 1_000_000
-        case .dynamixel2: 1_000_000
-        case .dynamixel1: 1_000_000
-        }
-    }
-
     /// Direcciones de los registros que se usan: (dirección, bytes).
     struct Registers {
         let model: (UInt16, Int)
@@ -101,7 +85,6 @@ struct Device: Identifiable, Codable, Equatable {
     var canRunPolicy: Bool { followerID != nil && cameraIndex != nil }
 
     /// Lo que se ve en la lista cuando nadie le puso nombre.
-    var portName: String { id.replacingOccurrences(of: "/dev/cu.", with: "") }
 
     /// Qué parece ser, por los motores que respondieron.
     var guess: String? {

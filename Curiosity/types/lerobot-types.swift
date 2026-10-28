@@ -19,6 +19,8 @@ struct Calibrations: Equatable {
 struct CameraInfo: Identifiable, Equatable {
     var index: Int
     var name: String
+    /// Enchufada por USB (no la de la Mac ni la de Continuidad): la preferida para el robot.
+    var external = false
     var id: Int { index }
 }
 

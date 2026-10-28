@@ -12,7 +12,6 @@ final class UseSimulation {
     private(set) var model: RobotModel?
     private(set) var state = SimulationState()
     private(set) var objects: [SceneObject] = []
-    private(set) var log: [String] = []
     private(set) var speed = 1.0
     private(set) var activeCamera: String?
     var physics = PhysicsSettings() { didSet { engine.setPhysics(physics) } }
@@ -188,8 +187,6 @@ final class UseSimulation {
         case "error":
             loadingText = nil
             error = m["text"] as? String
-        case "log":
-            if let text = m["text"] as? String { log.append(text) }
         case "model":
             loadingText = nil
             model = Self.parseModel(m)

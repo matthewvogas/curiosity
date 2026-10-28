@@ -3,7 +3,6 @@ import SwiftUI
 /// Todos los íconos de la app, en un solo lugar (SF Symbols, nativos de Apple).
 enum IconName: String {
     case robot = "cube.transparent"
-    case robotFill = "cube.transparent.fill"
     case add = "plus"
     case play = "play.fill"
     case pause = "pause.fill"
@@ -26,7 +25,6 @@ enum IconName: String {
     case move = "arrow.up.and.down.and.arrow.left.and.right"
     case object = "shippingbox"
     case trash = "trash"
-    case sliders = "slider.horizontal.3"
     case chat = "bubble.left.and.text.bubble.right"
     case scene = "square.3.layers.3d"
     case gauge = "dial.medium"
@@ -38,7 +36,6 @@ enum IconName: String {
     case taskLearned = "checkmark.circle"
     case dataset = "film.stack"
     case model = "brain"
-    case more = "ellipsis.circle"
 }
 
 /// `<Icon name: size:>`: nada de nombres de símbolos sueltos por la app.

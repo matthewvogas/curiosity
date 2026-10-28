@@ -47,21 +47,6 @@ final class UseDatasets {
         }
     }
 
-    /// Sube un dataset local a <usuario>/<nombre> en el Hub (privado por defecto).
-    func push(_ d: DatasetInfo, private isPrivate: Bool) async {
-        guard let user = lerobot.env?.hubUser else {
-            message = "Guarda tu token de Hugging Face en Ajustes para subir datasets."
-            return
-        }
-        message = "Subiendo \(d.name)…"
-        do {
-            let r = try await lerobot.request("push_dataset", ["root": d.root, "repo_id": "\(user)/\(d.name)", "private": isPrivate])
-            message = "Subido: \(r["url"] as? String ?? "")"
-        } catch {
-            message = error.localizedDescription
-        }
-    }
-
     func delete(_ d: DatasetInfo) async {
         do {
             _ = try await lerobot.request("delete_dataset", ["root": d.root])

@@ -29,7 +29,9 @@ final class BridgeQueries {
     func start(python: String, hubToken: String?) async throws {
         guard !isRunning else { return }
         guard FileManager.default.isExecutableFile(atPath: python) else {
-            throw BridgeError(message: "No encuentro el Python de LeRobot en \(python). Cámbialo en Ajustes.")
+            throw BridgeError(message: python.isEmpty
+                ? "No encontré LeRobot en esta Mac. Instálalo e indica su Python en Ajustes › Robots reales."
+                : "No encuentro el Python de LeRobot en \(python). Cámbialo en Ajustes.")
         }
         guard let script = Bundle.main.url(forResource: "curiosity_bridge", withExtension: "py", subdirectory: "bridge") else {
             throw BridgeError(message: "Falta el puente con LeRobot dentro de la app.")
@@ -41,7 +43,6 @@ final class BridgeQueries {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
         env["PYTHONUNBUFFERED"] = "1"
-        env["CURIOSITY_LOG"] = AppPaths.logs.appendingPathComponent("bridge.log").path
         if let hubToken, !hubToken.isEmpty { env["HF_TOKEN"] = hubToken }
         p.environment = env
 

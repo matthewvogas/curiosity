@@ -48,13 +48,6 @@ final class UseLeRobot {
         }
     }
 
-    func restart() async {
-        bridge.stop()
-        try? await Task.sleep(for: .seconds(1))
-        status = .off
-        await start()
-    }
-
     func refresh() async {
         do {
             let hello = try await bridge.request("hello")

@@ -9,13 +9,16 @@ pides tareas en tus palabras: la IA mira la escena, planea y mueve el robot en u
   el robot, objetos libres, pausa, paso a paso y velocidad.
 - **IA**: Claude con herramientas (`get_state`, `move_joints`, `look`, `add_object`, `remove_object`,
   `reset`). La API key se guarda en el Llavero. Las conversaciones se guardan por robot (Historial, en el chat).
-- **Robots reales** (por ahora el SO-101): se agregan con «Conectar robot externo». Desde la app, con tu
-  instalación de LeRobot: probar la conexión, elegir calibraciones, leader y cámara, teleoperar, grabar
-  datasets, buscar datasets en Hugging Face, entrenar (ACT, Diffusion, SmolVLA) y probar el modelo en el robot.
+- **Robots reales** (por ahora el SO-101), con tu instalación de LeRobot (la app la busca sola; si no, se
+  indica en Ajustes). Cada robot conectado es como un proyecto:
+  - **Enseñar**: tareas en tres pasos (grabar demostraciones con el leader, entrenar ACT / Diffusion /
+    SmolVLA, probar el modelo), con revisión previa de cada pieza antes de mover nada.
+  - **En vivo**: las cámaras y un gemelo 3D que copia la pose del robot; chat con la IA (cada movimiento se
+    aprueba) y control manual; «Saber»: la IA estudia demostraciones (de esta Mac o de Hugging Face) y las
+    reproduce y adapta en el robot sin entrenar.
   Lo hace un puente interno (`resources/bridge/curiosity_bridge.py`) que corre con el Python de LeRobot y
   habla con la app por líneas JSON. Los entrenamientos corren aparte con `lerobot-train` y siguen aunque se
-  cierre la app. Datos y modelos en Application Support/Curiosity.
-  Configurar, calibrar, teleoperar y entrenar se hace con LeRobot en la terminal.
+  cierre la app. Datos y modelos en Application Support/Curiosity. Calibrar se hace en la terminal.
 - **Robots**: el SO-101 viene incluido; cualquier URDF o MJCF se importa con sus mallas STL, OBJ o DAE; y la
   **biblioteca** trae 67 robots de MuJoCo Menagerie (brazos, pinzas, manos, cuadrúpedos, humanoides, móviles,
   drones) que se descargan con un clic en una versión fija del repositorio y quedan en la Mac.

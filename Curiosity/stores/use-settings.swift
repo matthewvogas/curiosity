@@ -6,7 +6,6 @@ import Observation
 final class UseSettings {
     private static let anthropicAccount = "anthropic-api-key"
     private static let hubAccount = "huggingface-token"
-    private static let defaultPython = FileManager.default.homeDirectoryForCurrentUser.path + "/Code/bot/lerobot/.venv/bin/python"
 
     /// El Python donde está instalado LeRobot (el de su entorno virtual).
     var lerobotPython: String { didSet { UserDefaults.standard.set(lerobotPython, forKey: "lerobot.python") } }
@@ -23,7 +22,8 @@ final class UseSettings {
         modelID = UserDefaults.standard.string(forKey: "ai.model") ?? AIModel.all[0].id
         effort = UserDefaults.standard.string(forKey: "ai.effort") ?? "medium"
         hasAnthropicKey = KeychainQueries.read(Self.anthropicAccount) != nil
-        lerobotPython = UserDefaults.standard.string(forKey: "lerobot.python") ?? Self.defaultPython
+        // La primera vez se busca solo; si no aparece, se indica en Ajustes.
+        lerobotPython = UserDefaults.standard.string(forKey: "lerobot.python") ?? PythonQueries.findLeRobot() ?? ""
         hasHubToken = KeychainQueries.read(Self.hubAccount) != nil
     }
 

@@ -43,15 +43,6 @@ struct CuriosityApp: App {
         let live = UseLiveRobot(lerobot: lerobot, knowledge: knowledge)
         _live = State(initialValue: live)
         _liveChat = State(initialValue: UseChat(settings: settings, body: live))
-        #if DEBUG
-        DebugSnapshot.scheduleIfRequested()
-        // CURIOSITY_ADD_LIBRARY=<id del catálogo>: descarga y abre ese robot (para probar sin clics).
-        if let id = ProcessInfo.processInfo.environment["CURIOSITY_ADD_LIBRARY"],
-           let robot = _library.wrappedValue.catalog?.robots.first(where: { $0.id == id }) {
-            let library = _library.wrappedValue
-            Task { await library.add(robot) }
-        }
-        #endif
     }
 
     var body: some Scene {

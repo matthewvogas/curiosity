@@ -28,9 +28,8 @@ import { triangles, decompose } from "./decompose.js";
 
 const RAPIER = RAPIER_MODULE;
 const post = (msg) => {
-  try { window.webkit.messageHandlers.studio.postMessage(msg); } catch { console.log(msg); }
+  try { window.webkit.messageHandlers.studio.postMessage(msg); } catch { /* fuera de la app no hay a quién avisar */ }
 };
-const log = (text, level = "info") => post({ type: "log", level, text });
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // Grupos de colisión: el robot (1) choca con el resto (2); consigo mismo solo si se activa.
@@ -444,7 +443,7 @@ function removeObject(id) {
 
 function addCamera(spec) {
   const link = model?.links.get(spec.link);
-  if (!link) { log(`La cámara «${spec.name}» va en un link que no existe: ${spec.link}`, "error"); return; }
+  if (!link) return;  // la cámara va en una pieza que este modelo no tiene
   const cam = new THREE.PerspectiveCamera(spec.fovy || 60, (spec.width || 640) / (spec.height || 480), 0.005, 20);
   // Pose dentro del link (convención de MuJoCo: mira hacia −z, y hacia arriba). quat [x,y,z,w] o rpy.
   const q = spec.quat ? new THREE.Quaternion(...spec.quat) : quatRPY(spec.rpy || [0, 0, 0]);
@@ -707,7 +706,6 @@ window.studio = {
         physics: { ...params },
         warnings: built.warnings,
       });
-      for (const w of built.warnings) log(w, "warning");
     } catch (e) {
       post({ type: "error", text: e.message });
     }

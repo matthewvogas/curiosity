@@ -23,10 +23,6 @@ enum LibraryQueries {
         folder(catalog).appendingPathComponent(robot.xml)
     }
 
-    static func isDownloaded(_ catalog: LibraryCatalog, _ robot: LibraryRobot) -> Bool {
-        robot.files.allSatisfy { FileManager.default.fileExists(atPath: folder(catalog).appendingPathComponent($0).path) }
-    }
-
     /// Descarga los archivos que falten (8 a la vez). `progress` recibe la fracción descargada.
     static func download(_ catalog: LibraryCatalog, _ robot: LibraryRobot,
                          progress: @escaping @MainActor (Double) -> Void) async throws -> URL {
