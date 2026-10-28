@@ -16,7 +16,6 @@ struct AddRobotScreen: View {
                 Text("Cualquier robot en URDF o MJCF: brazos, pinzas, manos, cuadrúpedos, humanoides.")
                     .font(.callout).foregroundStyle(Theme.muted)
             }
-            Divider()
 
             VStack(spacing: Theme.Space.s) {
                 ForEach(robots.included) { robot in
@@ -25,6 +24,7 @@ struct AddRobotScreen: View {
                         dismiss()
                     }
                 }
+                Divider().padding(.vertical, Theme.Space.xs)
                 OptionCard(icon: .globe, title: "Biblioteca de robots",
                            detail: "\(library.catalog?.robots.count ?? 0) robots de MuJoCo Menagerie, listos con un clic.") {
                     browsing = true

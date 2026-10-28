@@ -137,6 +137,7 @@ final class UseSimulation {
     func setTarget(_ joint: String, _ value: Double) {
         engine.setTarget(joint, value)
         if let i = state.joints.firstIndex(where: { $0.name == joint }) { state.joints[i].target = value }
+        if state.paused { togglePause() }  // mover un control es pedirle que corra
     }
 
     func setGains(_ joint: String, kp: Double? = nil, kd: Double? = nil, fmax: Double? = nil) {
@@ -193,6 +194,9 @@ final class UseSimulation {
             loadingText = nil
             model = Self.parseModel(m)
             objects = model?.objects ?? []
+            // Abre quieto: la física corre cuando la persona le da a reproducir (o cuando la IA lo mueve).
+            engine.pause(true)
+            state.paused = true
             engine.setRender(render)
             engine.setPhysics(physics)
         case "state":
