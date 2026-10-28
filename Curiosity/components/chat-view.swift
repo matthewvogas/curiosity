@@ -180,12 +180,26 @@ private struct NoticeRow: View {
     }
 }
 
+/// «Pensando…» con un brillo que lo recorre de izquierda a derecha.
 private struct ThinkingRow: View {
+    private let label = Text("Pensando…").font(.callout)
+
     var body: some View {
-        HStack(spacing: Theme.Space.s) {
-            ProgressView().controlSize(.mini)
-            Text("Pensando…").font(.callout).foregroundStyle(Theme.muted)
-        }
+        label
+            .foregroundStyle(Theme.muted)
+            .overlay {
+                TimelineView(.animation) { context in
+                    let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
+                    GeometryReader { g in
+                        let band = g.size.width * 0.5
+                        LinearGradient(colors: [.clear, Theme.ink, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: band)
+                            .offset(x: -band + phase * (g.size.width + band))
+                    }
+                }
+                .mask(label)
+            }
+            .accessibilityLabel("Pensando")
     }
 }
 
