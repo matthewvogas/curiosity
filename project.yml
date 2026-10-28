@@ -42,6 +42,11 @@ targets:
         LSMinimumSystemVersion: "26.0"
         NSHumanReadableCopyright: "Rosvelt · Curiosity"
         NSCameraUsageDescription: "Curiosity usa la cámara del robot para grabar demostraciones y para que el robot vea mientras hace una tarea."
+    # Con el runtime endurecido, la cámara necesita este permiso además de NSCameraUsageDescription.
+    entitlements:
+      path: Curiosity/curiosity.entitlements
+      properties:
+        com.apple.security.device.camera: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rosvelt.curiosity.studio
@@ -50,8 +55,10 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: YES
-        CODE_SIGN_STYLE: Automatic
-        CODE_SIGN_IDENTITY: "-"
+        # Firmada con el certificado de desarrollo: macOS recuerda el permiso de cámara entre compilaciones.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Development"
+        DEVELOPMENT_TEAM: Y7ZPLJ78P4
       configs:
         # La versión de prueba puede abrirse junto a la normal.
         Debug:
