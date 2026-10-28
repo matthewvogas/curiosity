@@ -69,14 +69,12 @@ struct SidebarList: View {
                 if !isCollapsed(device.id) {
                 ForEach(tasks[device.id] ?? []) { task in
                     SidebarRow(icon: icon(task.phase), title: task.title, subtitle: task.summary,
-                               selected: task.id == selectedTaskID, compact: true) { onSelectTask(device, task.id) }
-                        .padding(.leading, 22)
+                               selected: task.id == selectedTaskID, compact: true, indent: 22) { onSelectTask(device, task.id) }
                         .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
                         .listRowBackground(Color.clear)
                         .contextMenu { Button("Quitar tarea", role: .destructive) { onRemoveTask(task.id) } }
                 }
-                SidebarRow(icon: .add, title: "Nueva tarea", subtitle: nil, selected: false, compact: true, muted: true) { onNewTask(device) }
-                    .padding(.leading, 22)
+                SidebarRow(icon: .add, title: "Nueva tarea", subtitle: nil, selected: false, compact: true, muted: true, indent: 22) { onNewTask(device) }
                     .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 8, trailing: 0))
                     .listRowBackground(Color.clear)
                 }
@@ -139,6 +137,8 @@ private struct SidebarRow: View {
     let selected: Bool
     var compact = false
     var muted = false
+    /// Sangría del contenido (las tareas bajo su robot); el fondo igual ocupa todo el ancho.
+    var indent: CGFloat = 0
     var disclosure: Disclosure? = nil
     var onDisclose: (() -> Void)? = nil
     let action: () -> Void
@@ -169,7 +169,8 @@ private struct SidebarRow: View {
                 }
             }
             .foregroundStyle(muted ? Theme.muted : Theme.ink)
-            .padding(.horizontal, 6)
+            .padding(.leading, 6 + indent)
+            .padding(.trailing, 6)
             .padding(.vertical, compact ? 4 : 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(selected ? Theme.selection : hovering ? Theme.hover : .clear,
