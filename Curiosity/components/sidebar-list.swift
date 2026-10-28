@@ -10,32 +10,55 @@ struct SidebarList: View {
     let onReveal: (Robot) -> Void
 
     var body: some View {
+        // Encabezado y filas comparten los mismos márgenes: la fila empieza donde empieza «Robots»
+        // y termina donde termina el +.
         List {
-            Section {
-                ForEach(robots) { robot in
-                    RobotRow(robot: robot, selected: robot.id == selectedID) { onSelect(robot) }
-                        .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
-                        .listRowBackground(Color.clear)
-                        .contextMenu {
-                            Button("Mostrar en Finder") { onReveal(robot) }
-                            if robot.source == .file {
-                                Divider()
-                                Button("Quitar de la biblioteca", role: .destructive) { onRemove(robot) }
-                            }
+            SidebarHeader(title: "Robots", onAdd: onAdd)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 2, trailing: 0))
+                .listRowBackground(Color.clear)
+                .selectionDisabled()
+            ForEach(robots) { robot in
+                RobotRow(robot: robot, selected: robot.id == selectedID) { onSelect(robot) }
+                    .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .contextMenu {
+                        Button("Mostrar en Finder") { onReveal(robot) }
+                        if robot.source == .file {
+                            Divider()
+                            Button("Quitar de la biblioteca", role: .destructive) { onRemove(robot) }
                         }
-                }
-            } header: {
-                HStack {
-                    Text("Robots")
-                    Spacer()
-                    Button(action: onAdd) { Icon(name: .add, size: 12, weight: .semibold) }
-                        .buttonStyle(.borderless)
-                        .help("Agregar robot")
-                }
+                    }
             }
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+    }
+}
+
+/// Título de grupo con su botón + en bloque, alineado con los bordes de las filas.
+private struct SidebarHeader: View {
+    let title: String
+    let onAdd: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.muted)
+            Spacer()
+            Button(action: onAdd) {
+                Icon(name: .add, size: 11, weight: .semibold)
+                    .frame(width: 22, height: 22)
+                    .background(hovering ? Theme.selection : Theme.fill, in: .rect(cornerRadius: 6))
+                    .contentShape(.rect(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.muted)
+            .onHover { hovering = $0 }
+            .help("Agregar robot")
+        }
+        .padding(.top, Theme.Space.s)
     }
 }
 
