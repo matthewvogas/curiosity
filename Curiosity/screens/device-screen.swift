@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Un robot real (SO-101). Lo principal: enseñarle una tarea en tres pasos (demostraciones, entrenar,
 /// probar). Lo secundario va en la toolbar: moverlo con el leader y sus ajustes. Todo lo que mueve el
-/// robot pide confirmación; los valores por defecto se cambian en el inspector de la tarea.
+/// robot pide confirmación; los valores por defecto se cambian en la misma página de la tarea.
 struct DeviceScreen: View {
     let device: Device
     @Environment(UseDevices.self) private var devices
@@ -16,17 +16,13 @@ struct DeviceScreen: View {
     @State private var showingSettings = false
     @State private var showingHub = false
     @State private var snapshot: Data?
-    @State private var showingOptions = false
 
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .navigationTitle(device.name.isEmpty ? (device.guess ?? "SO-101") : device.name)
-            .navigationSubtitle(subtitle)
+            .navigationTitle(openTask?.title ?? deviceName)
+            .navigationSubtitle(openTask == nil ? subtitle : deviceName)
             .toolbar { toolbar }
-            .inspector(isPresented: Binding(get: { showingOptions && openTask != nil }, set: { showingOptions = $0 })) {
-                if let task = openTask { taskOptions(task).inspectorColumnWidth(min: 260, ideal: 300, max: 380) }
-            }
             .task { await lerobot.start(); applyDefaults(); await datasets.load() }
             .onChange(of: lerobot.status) { applyDefaults() }
             .onChange(of: lerobot.session?.active) { _, active in if active == false { Task { await datasets.load() } } }
@@ -81,58 +77,28 @@ struct DeviceScreen: View {
 
     private func taskPage(_ task: TeachTask) -> some View {
         let s = status(task)
-        let dataset = datasets.local.first { $0.source == (task.hubDataset ? "hub" : "local") && $0.name == task.dataset }
-        let stage: TaskStage = s.isTraining ? .train : s.hasModel ? .test
-            : (task.hubDataset || s.demos >= task.episodes) ? .train : .demos
-        let blocker: String? = switch stage {
-        case .demos: device.canRecord ? nil : "Falta elegir el leader o la cámara."
-        case .test: device.canRunPolicy ? nil : "Falta elegir la cámara."
-        case .train: nil
-        }
         let info = TaskPageInfo(
-            title: task.title,
-            subtitle: "\(device.name.isEmpty ? (device.guess ?? "SO-101") : device.name) · creada el \(task.createdAt.formatted(date: .long, time: .omitted))",
-            stage: stage, demos: s.demos, target: task.episodes, hubDataset: task.hubDataset ? task.dataset : nil,
-            recordedMinutes: dataset.flatMap { d in d.fps.map { Double(d.frames) / $0 / 60 } }, fps: dataset?.fps,
-            datasetName: task.dataset, policyName: policyName(task.policy), steps: task.steps, eta: eta(task),
-            progress: s.progress, hasModel: s.hasModel, runSeconds: Int(task.runSeconds), episodeSeconds: Int(task.episodeSeconds),
-            cameraName: device.cameraName, picture: snapshot, blocker: blocker, busy: lerobot.isBusy, notice: notice)
+            demos: s.demos, hubDataset: task.hubDataset ? task.dataset : nil,
+            policies: PolicyOption.all.map { p in (p.id, p.needsSmolVLA && lerobot.env?.smolvla != true ? "\(p.name) (falta instalar)" : p.name) },
+            progress: s.progress, hasModel: s.hasModel, eta: eta(task),
+            canRecord: device.canRecord, canRun: device.canRunPolicy, busy: lerobot.isBusy, notice: notice)
         let actions = TaskPageActions(
-            onBack: { tasks.selectedID = nil },
-            onRemove: { tasks.remove(task.id) },
             onRecord: { confirm = .record },
             onHub: openHub,
+            onUseOwn: { tasks.update(task.id) { $0.hubDataset = false; $0.dataset = Naming.slug($0.title) } },
             onTrain: { startTraining(task) },
             onStopTraining: { if let job = s.job { training.stop(job) } },
             onRun: { runJob = nil; confirm = .run },
             onFixSetup: { showingSettings = true },
-            onRefreshPicture: refreshPicture,
-            onRevealData: { if let d = dataset { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: d.root)]) } },
-            onShowLog: { if let job = s.job { NSWorkspace.shared.open(URL(fileURLWithPath: job.log)) } })
-        return TaskPage(info: info, actions: actions)
-            .task(id: task.id) { refreshPicture() }
-    }
-
-    private func taskOptions(_ task: TeachTask) -> some View {
-        TaskOptionsForm(
-            episodes: bind(task, \.episodes), episodeSeconds: bind(task, \.episodeSeconds), resetSeconds: bind(task, \.resetSeconds),
-            policy: bind(task, \.policy), steps: bind(task, \.steps), batchSize: bind(task, \.batchSize), runSeconds: bind(task, \.runSeconds),
-            policies: PolicyOption.all.map { p in
-                (p.id, p.needsSmolVLA && lerobot.env?.smolvla != true ? "\(p.name) (falta instalar)" : p.name, p.detail)
-            },
-            dataset: task.hubDataset ? task.dataset : "local/\(task.dataset)", usesHub: task.hubDataset,
-            onUseHub: openHub,
-            onUseOwn: { tasks.update(task.id) { $0.hubDataset = false; $0.dataset = Naming.slug($0.title) } })
+            onRemove: { tasks.remove(task.id) })
+        return TaskPage(info: info, episodes: bind(task, \.episodes), episodeSeconds: bind(task, \.episodeSeconds),
+                        policy: bind(task, \.policy), steps: bind(task, \.steps), runSeconds: bind(task, \.runSeconds),
+                        actions: actions)
     }
 
     private func openHub() {
         showingHub = true
         Task { if datasets.hub.isEmpty { await datasets.search() } }
-    }
-
-    private func refreshPicture() {
-        guard let i = device.cameraIndex, lerobot.status == .ready, !lerobot.isBusy else { return }
-        Task { snapshot = await lerobot.snapshot(i) }
     }
 
     @State private var runJob: String?
@@ -141,24 +107,18 @@ struct DeviceScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
+        if device.leaderPort != nil { ToolbarItem(placement: .primaryAction) {
             if lerobot.session?.active == true && lerobot.session?.kind == "teleop" {
                 Button { lerobot.stop() } label: { Label("Dejar de mover", systemImage: "stop.fill") }
                     .labelStyle(.titleAndIcon)
                     .help("Suelta los motores del follower")
             } else {
-                Button { confirm = .teleop } label: { Label("Mover con el leader", systemImage: "arrow.left.arrow.right") }
+                Button { confirm = .teleop } label: { Label("Mover con el leader", systemImage: "hand.raised") }
                     .labelStyle(.titleAndIcon)
                     .disabled(!device.canTeleoperate || lerobot.isBusy)
-                    .help(device.canTeleoperate ? "El follower copia al leader. No graba nada." : "Configura el leader en Ajustes del robot")
+                    .help(device.canTeleoperate ? "Este robot copia a su leader. No graba nada." : "Elige la calibración del leader en Ajustes del robot")
             }
-        }
-        if openTask != nil {
-            ToolbarItem(placement: .primaryAction) {
-                Button { showingOptions.toggle() } label: { Label("Opciones de la tarea", systemImage: IconName.sliders.rawValue) }
-                    .help("Demostraciones, modelo, pasos y duración de la prueba")
-            }
-        }
+        } }
         ToolbarItem(placement: .primaryAction) {
             Button { showingSettings = true } label: { Label("Ajustes del robot", systemImage: IconName.settings.rawValue) }
                 .help("Conexión, brazos y cámara")
@@ -250,6 +210,8 @@ struct DeviceScreen: View {
     }
 
     // MARK: - Estado
+
+    private var deviceName: String { device.name.isEmpty ? (device.guess ?? "SO-101") : device.name }
 
     private var openTask: TeachTask? {
         guard lerobot.session?.active != true || lerobot.session?.kind == "teleop" else { return nil }
