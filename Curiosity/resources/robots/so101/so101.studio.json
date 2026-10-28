@@ -1,0 +1,101 @@
+{
+  "name": "SO-101",
+  "description": "Brazo de 6 articulaciones de TheRobotStudio y Hugging Face (LeRobot).",
+  "license": "Apache-2.0 · TheRobotStudio/SO-ARM100",
+  "actuators": {
+    "shoulder_pan": {
+      "fmax": 3
+    },
+    "shoulder_lift": {
+      "fmax": 3
+    },
+    "elbow_flex": {
+      "fmax": 3
+    },
+    "wrist_flex": {
+      "fmax": 3
+    },
+    "wrist_roll": {
+      "fmax": 3
+    },
+    "gripper": {
+      "fmax": 3
+    }
+  },
+  "cameras": [
+    {
+      "name": "Muñeca",
+      "link": "gripper_link",
+      "pos": [
+        -0.00296,
+        0.05436,
+        -0.0531
+      ],
+      "quat": [
+        -0.285792,
+        -0.001556,
+        0.004547,
+        0.95828
+      ],
+      "fovy": 61,
+      "width": 640,
+      "height": 480
+    }
+  ],
+  "scene": {
+    "objects": [
+      {
+        "shape": "box",
+        "size": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "mass": 0.012,
+        "color": "#e4572e",
+        "pos": [
+          0.22,
+          0.05,
+          0.0125
+        ]
+      },
+      {
+        "shape": "box",
+        "size": [
+          0.025,
+          0.025,
+          0.025
+        ],
+        "mass": 0.012,
+        "color": "#4ea7fc",
+        "pos": [
+          0.25,
+          -0.06,
+          0.0125
+        ]
+      },
+      {
+        "shape": "cylinder",
+        "size": [
+          0.015,
+          0.05
+        ],
+        "mass": 0.02,
+        "color": "#f2c94c",
+        "pos": [
+          0.18,
+          -0.12,
+          0.025
+        ]
+      }
+    ]
+  },
+  "home": {
+    "shoulder_pan": 0.13,
+    "shoulder_lift": -1.74,
+    "elbow_flex": 1.68,
+    "wrist_flex": 0.97,
+    "wrist_roll": -0.14,
+    "gripper": 0.0
+  }
+}

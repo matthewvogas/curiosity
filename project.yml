@@ -1,0 +1,47 @@
+# Curiosity: simulador de robots con IA para macOS 26+ (SwiftUI + Liquid Glass).
+# Genera el proyecto de Xcode con:  xcodegen
+name: Curiosity
+options:
+  bundleIdPrefix: com.rosvelt
+  deploymentTarget:
+    macOS: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+    SWIFT_APPROACHABLE_CONCURRENCY: YES
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_LANGUAGE: es
+targets:
+  Curiosity:
+    type: application
+    platform: macOS
+    sources:
+      - path: Curiosity
+        excludes: ["resources/studio/**", "resources/robots/**", "resources/Info.plist"]
+      # Carpetas copiadas tal cual: el motor 3D y los robots incluidos.
+      - path: Curiosity/resources/studio
+        type: folder
+        buildPhase: resources
+      - path: Curiosity/resources/robots
+        type: folder
+        buildPhase: resources
+    info:
+      path: Curiosity/resources/Info.plist
+      properties:
+        CFBundleDisplayName: Curiosity
+        CFBundleDevelopmentRegion: es
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: "26.0"
+        NSHumanReadableCopyright: "Rosvelt · Curiosity"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rosvelt.curiosity.studio
+        PRODUCT_NAME: Curiosity
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
