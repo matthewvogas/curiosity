@@ -1,6 +1,6 @@
 # Curiosity
 
-Un simulador de robots con IA para macOS. Cargas cualquier robot (URDF), conectas un modelo de IA y le
+Un simulador de robots con IA para macOS. Cargas cualquier robot (URDF o MJCF), conectas un modelo de IA y le
 pides tareas en tus palabras: la IA mira la escena, planea y mueve el robot en una simulación con física.
 
 - **Simulación** (lo esencial de MuJoCo, sobre Rapier): cuerpos con masa e inercia del URDF, articulaciones
@@ -9,7 +9,11 @@ pides tareas en tus palabras: la IA mira la escena, planea y mueve el robot en u
   el robot, objetos libres, pausa, paso a paso y velocidad.
 - **IA**: Claude con herramientas (`get_state`, `move_joints`, `look`, `add_object`, `remove_object`,
   `reset`). La API key se guarda en el Llavero.
-- **Robots**: el SO-101 viene incluido; cualquier URDF se importa con sus mallas STL, OBJ o DAE.
+- **Robots**: el SO-101 viene incluido; cualquier URDF o MJCF se importa con sus mallas STL, OBJ o DAE; y la
+  **biblioteca** trae 67 robots de MuJoCo Menagerie (brazos, pinzas, manos, cuadrúpedos, humanoides, móviles,
+  drones) que se descargan con un clic en una versión fija del repositorio y quedan en la Mac.
+- **Pinzas que agarran**: articulaciones acopladas (`<mimic>` en URDF; `<equality joint>` y tendones fijos en
+  MJCF) y descomposición convexa de las mallas cóncavas (`decompose.js`).
 
 ## Correr
 
@@ -28,7 +32,13 @@ Curiosity/
   utils/        lógica pura: unidades, herramientas de la IA, tema
   types/        tipos de datos
   resources/
-    studio/     motor de simulación (engine.js) y sus librerías (three.js, Rapier), sin internet
+    studio/     motor de simulación, sin internet:
+                  engine.js      física, escena y API para la app
+                  model-urdf.js  URDF → modelo interno
+                  model-mjcf.js  MJCF → modelo interno
+                  decompose.js   descomposición convexa de mallas
+                  lib/           three.js y Rapier
+    library/    catálogo de MuJoCo Menagerie (menagerie.json)
     robots/     robots incluidos: <id>/<id>.urdf + <id>.studio.json + mallas
 ```
 
@@ -58,6 +68,7 @@ Unidades SI (metros, radianes, kg). Las cámaras miran hacia −z, como en MuJoC
 
 ## Pendiente
 
-MJCF, robots físicos (LeRobot), biblioteca online, otros proveedores de IA y modelos de robots (VLA),
-entrenamiento, simulación más rápida que el tiempo real y en lotes, descomposición convexa de mallas,
-sensores de fuerza reales del actuador, aleatorización de dominio, grabar datasets.
+Del MJCF: `<equality weld/connect>` (mecanismos de cuatro barras, como la Robotiq 2F-85), tendones espaciales,
+músculos, mallas definidas por vértices. Además: robots físicos (LeRobot), otros proveedores de IA y modelos
+de robots (VLA), entrenamiento, simulación más rápida que el tiempo real y en lotes, sensores de fuerza reales
+del actuador, aleatorización de dominio, grabar datasets.

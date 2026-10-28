@@ -15,16 +15,25 @@ struct CuriosityApp: App {
     @State private var robots: UseRobots
     @State private var simulation: UseSimulation
     @State private var chat: UseChat
+    @State private var library: UseLibrary
 
     init() {
         let settings = UseSettings()
         let simulation = UseSimulation()
         _settings = State(initialValue: settings)
-        _robots = State(initialValue: UseRobots())
+        let robots = UseRobots()
+        _robots = State(initialValue: robots)
+        _library = State(initialValue: UseLibrary(robots: robots))
         _simulation = State(initialValue: simulation)
         _chat = State(initialValue: UseChat(settings: settings, simulation: simulation))
         #if DEBUG
         DebugSnapshot.scheduleIfRequested()
+        // CURIOSITY_ADD_LIBRARY=<id del catálogo>: descarga y abre ese robot (para probar sin clics).
+        if let id = ProcessInfo.processInfo.environment["CURIOSITY_ADD_LIBRARY"],
+           let robot = _library.wrappedValue.catalog?.robots.first(where: { $0.id == id }) {
+            let library = _library.wrappedValue
+            Task { await library.add(robot) }
+        }
         #endif
     }
 
@@ -35,6 +44,7 @@ struct CuriosityApp: App {
                 .environment(robots)
                 .environment(simulation)
                 .environment(chat)
+                .environment(library)
                 .frame(minWidth: 1000, minHeight: 640)
         }
         .defaultSize(width: 1440, height: 900)

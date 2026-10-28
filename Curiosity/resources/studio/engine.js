@@ -22,6 +22,9 @@ import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
 import RAPIER_MODULE from "./lib/rapier.es.js";
+import { parseURDF } from "./model-urdf.js";
+import { parseMJCF } from "./model-mjcf.js";
+import { triangles, decompose } from "./decompose.js";
 
 const RAPIER = RAPIER_MODULE;
 const post = (msg) => {
@@ -63,71 +66,6 @@ const toR = (v) => ({ x: v.x, y: v.y, z: v.z });
 const toRQ = (q) => ({ x: q.x, y: q.y, z: q.z, w: q.w });
 const fromRQ = (q) => new THREE.Quaternion(q.x, q.y, q.z, q.w);
 
-function originOf(el) {
-  const o = el?.querySelector(":scope > origin");
-  return { xyz: vec(o?.getAttribute("xyz")), rpy: vec(o?.getAttribute("rpy")) };
-}
-
-// ---------- URDF ----------
-function parseURDF(text) {
-  const doc = new DOMParser().parseFromString(text, "application/xml");
-  const robot = doc.querySelector("robot");
-  if (!robot) throw new Error("El archivo no tiene <robot>: ¿es un URDF?");
-  const materials = {};
-  for (const m of robot.querySelectorAll(":scope > material")) {
-    const c = m.querySelector("color");
-    if (c) materials[m.getAttribute("name")] = vec(c.getAttribute("rgba"), [0.8, 0.8, 0.8, 1]);
-  }
-  const geom = (g) => {
-    if (!g) return null;
-    const mesh = g.querySelector("mesh"), box = g.querySelector("box"), cyl = g.querySelector("cylinder"), sph = g.querySelector("sphere");
-    if (mesh) return { type: "mesh", file: mesh.getAttribute("filename"), scale: vec(mesh.getAttribute("scale"), [1, 1, 1]) };
-    if (box) return { type: "box", size: vec(box.getAttribute("size")) };
-    if (cyl) return { type: "cylinder", radius: +cyl.getAttribute("radius"), length: +cyl.getAttribute("length") };
-    if (sph) return { type: "sphere", radius: +sph.getAttribute("radius") };
-    return null;
-  };
-  const shapes = (link, tag) => [...link.querySelectorAll(`:scope > ${tag}`)].map((v) => {
-    const mat = v.querySelector("material");
-    const rgba = mat?.querySelector("color")?.getAttribute("rgba");
-    return {
-      ...originOf(v),
-      geometry: geom(v.querySelector("geometry")),
-      color: rgba ? vec(rgba) : materials[mat?.getAttribute("name")] || null,
-    };
-  }).filter((s) => s.geometry);
-  const links = [...robot.querySelectorAll(":scope > link")].map((l) => {
-    const inertial = l.querySelector(":scope > inertial");
-    const I = inertial?.querySelector("inertia");
-    return {
-      name: l.getAttribute("name"),
-      visuals: shapes(l, "visual"),
-      collisions: shapes(l, "collision"),
-      inertial: inertial ? {
-        ...originOf(inertial),
-        mass: +(inertial.querySelector("mass")?.getAttribute("value") || 0),
-        inertia: I ? ["ixx", "iyy", "izz"].map((k) => +(I.getAttribute(k) || 0)) : [0, 0, 0],
-      } : null,
-    };
-  });
-  const joints = [...robot.querySelectorAll(":scope > joint")].map((j) => {
-    const lim = j.querySelector("limit");
-    return {
-      name: j.getAttribute("name"),
-      type: j.getAttribute("type"),
-      parent: j.querySelector("parent").getAttribute("link"),
-      child: j.querySelector("child").getAttribute("link"),
-      ...originOf(j),
-      axis: vec(j.querySelector("axis")?.getAttribute("xyz"), [1, 0, 0]),
-      lower: lim ? +(lim.getAttribute("lower") ?? 0) : null,
-      upper: lim ? +(lim.getAttribute("upper") ?? 0) : null,
-      effort: lim ? +(lim.getAttribute("effort") || 0) : 0,
-      velocity: lim ? +(lim.getAttribute("velocity") || 0) : 0,
-    };
-  });
-  return { name: robot.getAttribute("name") || "robot", links, joints };
-}
-
 const debugMaterials = {
   collision: new THREE.MeshBasicMaterial({ color: 0x4ea7fc, wireframe: true, transparent: true, opacity: 0.55 }),
   com: new THREE.MeshBasicMaterial({ color: 0xf2c94c, depthTest: false }),
@@ -168,11 +106,12 @@ function candidates(file, base) {
   if (file.startsWith("/")) return [`curiosity://local/fs${file}`];
   return [`${base}/${file}`];
 }
-async function loadMesh(file, base) {
-  const key = `${base}|${file}`;
+async function loadMesh(file, base, url = null) {
+  const key = url || `${base}|${file}`;
   if (!meshCache.has(key)) {
     meshCache.set(key, (async () => {
-      const hit = await fetchFirst(candidates(file, base));
+      const hit = await fetchFirst(url ? [url] : candidates(file, base));
+      file = file || url;
       if (!hit) throw new Error(`No encuentro la malla ${file}`);
       const ext = file.split(".").pop().toLowerCase();
       if (ext === "stl") {
@@ -196,9 +135,21 @@ async function loadMesh(file, base) {
 function primitive(g) {
   if (g.type === "box") return new THREE.BoxGeometry(...g.size);
   if (g.type === "sphere") return new THREE.SphereGeometry(g.radius, 32, 16);
-  // URDF: cilindro a lo largo de z; three.js: a lo largo de y.
+  if (g.type === "ellipsoid") return new THREE.SphereGeometry(1, 32, 16).scale(...g.radii);
+  // Cilindros y cápsulas van a lo largo de z (URDF y MJCF); en three.js, a lo largo de y.
+  if (g.type === "capsule") return new THREE.CapsuleGeometry(g.radius, g.length, 8, 24).rotateX(Math.PI / 2);
   return new THREE.CylinderGeometry(g.radius, g.radius, g.length, 32).rotateX(Math.PI / 2);
 }
+
+async function shapeObject(s, base) {
+  const g = s.geometry;
+  if (g.type !== "mesh") return new THREE.Mesh(primitive(g));
+  const obj = await loadMesh(g.file, base, g.url);
+  obj.scale.set(...g.scale);
+  return obj;
+}
+
+const arrQ = (a) => new THREE.Quaternion(a[0], a[1], a[2], a[3]);
 
 function materialFor(color) {
   const [r, g, b, a] = color || [0.86, 0.86, 0.84, 1];
@@ -223,45 +174,47 @@ function hullPoints(object3d, bodyMatrix) {
 }
 
 // ---------- construir el modelo ----------
-async function buildModel(urdf, base, profile) {
-  const links = new Map(urdf.links.map((l) => [l.name, { ...l, children: [] }]));
-  const childOf = new Set(urdf.joints.map((j) => j.child));
-  for (const j of urdf.joints) links.get(j.parent)?.children.push(j);
-  const rootLink = urdf.links.find((l) => !childOf.has(l.name))?.name;
-  if (!rootLink) throw new Error("El URDF no tiene un link raíz.");
+/** Arma cuerpos, colisiones y articulaciones a partir del modelo interno (URDF o MJCF). */
+async function buildModel(im, base, profile) {
+  const links = new Map(im.links.map((l) => [l.name, l]));
+  const childOf = new Set(im.joints.map((j) => j.child));
+  const byParent = new Map();
+  for (const j of im.joints) { if (!byParent.has(j.parent)) byParent.set(j.parent, []); byParent.get(j.parent).push(j); }
+  const rootLink = im.links.find((l) => !childOf.has(l.name))?.name;
+  if (!rootLink) throw new Error("El modelo no tiene una pieza raíz.");
+  const decomposeParts = profile?.collision?.maxParts ?? 8;
 
-  // Pose de cada link en la configuración cero.
+  // Pose de cada pieza en la configuración cero (de la raíz a las puntas).
   const pose = new Map([[rootLink, { p: new THREE.Vector3(), q: new THREE.Quaternion() }]]);
   const order = [rootLink];
   for (let i = 0; i < order.length; i++) {
     const parent = pose.get(order[i]);
-    for (const j of links.get(order[i]).children) {
-      const p = new THREE.Vector3(...j.xyz).applyQuaternion(parent.q).add(parent.p);
-      const q = parent.q.clone().multiply(quatRPY(j.rpy));
-      pose.set(j.child, { p, q });
+    for (const j of byParent.get(order[i]) || []) {
+      if (pose.has(j.child)) continue;
+      pose.set(j.child, { p: new THREE.Vector3(...j.pos).applyQuaternion(parent.q).add(parent.p), q: parent.q.clone().multiply(arrQ(j.quat)) });
       order.push(j.child);
     }
   }
 
-  const warnings = [];
-  const out = { name: urdf.name, links: new Map(), joints: [], rootLink, mass: 0 };
+  const warnings = [...(im.warnings || [])];
+  const floating = new Set(im.joints.filter((j) => j.type === "floating").map((j) => j.child));
+  const out = { name: im.name, links: new Map(), joints: [], allJoints: [], rootLink, mass: 0, floating: floating.size > 0 };
+  let decomposed = 0;
   for (const name of order) {
     const l = links.get(name), { p, q } = pose.get(name);
-    // Cuerpo alineado con el mundo en la pose cero; las formas llevan la rotación del link.
-    const isRoot = name === rootLink;
-    const desc = (isRoot && params.fixedBase ? RAPIER.RigidBodyDesc.fixed() : RAPIER.RigidBodyDesc.dynamic())
-      .setTranslation(p.x, p.y, p.z).setCanSleep(false);
-    const body = world.createRigidBody(desc);
+    // Cuerpo alineado con el mundo en la pose cero; las formas llevan la rotación de la pieza.
+    const fixed = name === rootLink && (params.fixedBase || name === "world");
+    const body = world.createRigidBody((fixed ? RAPIER.RigidBodyDesc.fixed() : RAPIER.RigidBodyDesc.dynamic())
+      .setTranslation(p.x, p.y, p.z).setCanSleep(false));
     const group = new THREE.Group();
     group.position.copy(p);
     root.add(group);
-    const linkFrame = new THREE.Matrix4().makeRotationFromQuaternion(q);  // marco del link dentro del cuerpo
+    const linkFrame = new THREE.Matrix4().makeRotationFromQuaternion(q);  // marco de la pieza dentro del cuerpo
 
     // Visual
     for (const v of l.visuals) {
       try {
-        const obj = v.geometry.type === "mesh" ? await loadMesh(v.geometry.file, base) : new THREE.Mesh(primitive(v.geometry));
-        if (v.geometry.type === "mesh") obj.scale.set(...v.geometry.scale);
+        const obj = await shapeObject(v, base);
         const mat = materialFor(v.color);
         obj.traverse((o) => {
           if (!o.isMesh) return;
@@ -273,55 +226,57 @@ async function buildModel(urdf, base, profile) {
         const holder = new THREE.Group();
         holder.applyMatrix4(linkFrame);
         const off = new THREE.Group();
-        off.position.set(...v.xyz);
-        off.quaternion.copy(quatRPY(v.rpy));
+        off.position.set(...v.pos);
+        off.quaternion.copy(arrQ(v.quat));
         off.add(obj);
         holder.add(off);
         group.add(holder);
       } catch (e) { warnings.push(`${name}: ${e.message}`); }
     }
 
-    // Colisión (envolvente convexa por forma). Sin <collision>, se usa la visual.
+    // Colisión: envolventes convexas; las mallas cóncavas se parten en varias (decompose.js).
     const shapes = l.collisions.length ? l.collisions : l.visuals;
     const colliders = [];
     for (const s of shapes) {
       try {
-        const obj = s.geometry.type === "mesh" ? await loadMesh(s.geometry.file, base) : new THREE.Mesh(primitive(s.geometry));
-        if (s.geometry.type === "mesh") obj.scale.set(...s.geometry.scale);
+        const obj = await shapeObject(s, base);
         const off = new THREE.Group();
-        off.position.set(...s.xyz);
-        off.quaternion.copy(quatRPY(s.rpy));
+        off.position.set(...s.pos);
+        off.quaternion.copy(arrQ(s.quat));
         off.add(obj);
-        const pts = hullPoints(off, linkFrame);
-        const cd = RAPIER.ColliderDesc.convexHull(pts);
-        if (!cd) { warnings.push(`${name}: no se pudo armar la colisión`); continue; }
-        cd.setFriction(params.friction).setRestitution(params.restitution)
-          .setCollisionGroups(groups(G_ROBOT, params.selfCollision ? G_ROBOT | G_WORLD : G_WORLD))
-          .setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS);
-        if (l.inertial?.mass > 0) cd.setDensity(0);
-        const c = world.createCollider(cd, body);
-        c.userData = { link: name };
-        colliders.push(c);
-        try {
-          const v = [];
-          for (let i = 0; i < pts.length; i += 3) v.push(new THREE.Vector3(pts[i], pts[i + 1], pts[i + 2]));
-          const hull = new THREE.Mesh(new ConvexGeometry(v), debugMaterials.collision);
-          hull.userData.layer = "collision";
-          hull.visible = render.collision;
-          group.add(hull);
-        } catch { /* sin malla de depuración */ }
+        const { parts } = s.geometry.type === "mesh" ? decompose(triangles(off, linkFrame), decomposeParts) : decompose(triangles(off, linkFrame), 1);
+        if (parts.length > 1) decomposed++;
+        for (const pts of parts) {
+          const cd = RAPIER.ColliderDesc.convexHull(pts);
+          if (!cd) continue;
+          cd.setFriction(params.friction).setRestitution(params.restitution)
+            .setCollisionGroups(groups(G_ROBOT, params.selfCollision ? G_ROBOT | G_WORLD : G_WORLD))
+            .setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS);
+          if (l.inertial?.mass > 0) cd.setDensity(0);
+          const c = world.createCollider(cd, body);
+          c.userData = { link: name };
+          colliders.push(c);
+          try {
+            const vs = [];
+            for (let i = 0; i < pts.length; i += 3) vs.push(new THREE.Vector3(pts[i], pts[i + 1], pts[i + 2]));
+            const hull = new THREE.Mesh(new ConvexGeometry(vs), debugMaterials.collision);
+            hull.userData.layer = "collision";
+            hull.visible = render.collision;
+            group.add(hull);
+          } catch { /* sin malla de depuración */ }
+        }
       } catch (e) { warnings.push(`${name}: ${e.message}`); }
     }
 
-    // Masa e inercia del URDF (en el marco del cuerpo).
+    // Masa e inercia (en el marco del cuerpo). Las piezas virtuales llevan una masa mínima.
     if (l.inertial?.mass > 0) {
-      const com = new THREE.Vector3(...l.inertial.xyz).applyQuaternion(q);
-      const frame = q.clone().multiply(quatRPY(l.inertial.rpy));
+      const com = new THREE.Vector3(...l.inertial.pos).applyQuaternion(q);
+      const frame = q.clone().multiply(arrQ(l.inertial.quat));
       const [ix, iy, iz] = l.inertial.inertia.map((v) => Math.max(v, 1e-7));
       body.setAdditionalMassProperties(l.inertial.mass, toR(com), { x: ix, y: iy, z: iz }, toRQ(frame), true);
-    } else if (!colliders.length && !(isRoot && params.fixedBase)) {
-      body.setAdditionalMass(0.01, true);
-      warnings.push(`${name}: sin masa ni colisión; se le dan 10 g`);
+    } else if (!colliders.length && !fixed) {
+      body.setAdditionalMassProperties(1e-3, { x: 0, y: 0, z: 0 }, { x: 1e-7, y: 1e-7, z: 1e-7 }, { x: 0, y: 0, z: 0, w: 1 }, true);
+      if (!l.virtual) warnings.push(`${name}: sin masa ni colisión; se le da 1 g`);
     }
 
     const com = new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 8), debugMaterials.com);
@@ -331,48 +286,60 @@ async function buildModel(urdf, base, profile) {
     com.visible = render.com;
     group.add(com);
     out.mass += l.inertial?.mass > 0 ? l.inertial.mass : colliders.reduce((m, c) => m + c.mass(), 0);
-    out.links.set(name, { name, body, group, q0: q.clone(), p0: p.clone(), colliders });
+    out.links.set(name, { name, body, group, q0: q.clone(), p0: p.clone(), colliders, virtual: !!l.virtual });
   }
+  if (decomposed) warnings.push(`${decomposed} piezas cóncavas se partieron en varias formas convexas para chocar mejor`);
 
   // Articulaciones
-  for (const j of urdf.joints) {
+  for (const j of im.joints) {
     const parent = out.links.get(j.parent), child = out.links.get(j.child);
     if (!parent || !child) continue;
-    const jp = pose.get(j.child).p;             // la articulación está en el origen del link hijo
-    const a1 = jp.clone().sub(parent.p0), a2 = new THREE.Vector3();
-    const axis = new THREE.Vector3(...j.axis).normalize().applyQuaternion(pose.get(j.child).q);
+    const cp = pose.get(j.child);
+    // Punto de giro en el mundo (pose cero) y su posición en cada cuerpo (alineados con el mundo).
+    const anchor = new THREE.Vector3(...j.anchor).applyQuaternion(cp.q).add(cp.p);
+    const a1 = anchor.clone().sub(parent.p0), a2 = anchor.clone().sub(child.p0);
+    const axis = new THREE.Vector3(...j.axis).normalize().applyQuaternion(cp.q);
+    const info = { name: j.name, type: j.type, parent: j.parent, child: j.child, a1, a2, axis };
+    out.allJoints.push(info);
+    if (j.type === "floating") continue;   // base flotante: el cuerpo queda libre
+
     let data;
     if (j.type === "revolute" || j.type === "continuous") data = RAPIER.JointData.revolute(toR(a1), toR(a2), toR(axis));
     else if (j.type === "prismatic") data = RAPIER.JointData.prismatic(toR(a1), toR(a2), toR(axis));
-    else if (j.type === "fixed") data = RAPIER.JointData.fixed(toR(a1), { x: 0, y: 0, z: 0, w: 1 }, toR(a2), { x: 0, y: 0, z: 0, w: 1 });
-    else { warnings.push(`${j.name}: tipo «${j.type}» pendiente; queda libre`); continue; }
-    const limited = j.type !== "continuous" && j.lower != null && j.upper != null && j.upper > j.lower;
-    if (limited && j.type !== "fixed") { data.limitsEnabled = true; data.limits = [j.lower, j.upper]; }
+    else if (j.type === "spherical") data = RAPIER.JointData.spherical(toR(a1), toR(a2));
+    else data = RAPIER.JointData.fixed(toR(a1), { x: 0, y: 0, z: 0, w: 1 }, toR(a2), { x: 0, y: 0, z: 0, w: 1 });
+    const limited = (j.type === "revolute" || j.type === "prismatic") && j.lower != null && j.upper != null && j.upper > j.lower;
+    if (limited) { data.limitsEnabled = true; data.limits = [j.lower, j.upper]; }
     const rj = world.createImpulseJoint(data, parent.body, child.body, true);
-    if (j.type !== "fixed") {
-      const arrow = new THREE.ArrowHelper(axis.clone(), new THREE.Vector3(), 0.05, 0xff4fa3, 0.012, 0.008);
-      arrow.userData.layer = "joints";
-      arrow.visible = render.joints;
-      child.group.add(arrow);
-    }
-    rj.setContactsEnabled(false);  // los links vecinos no chocan entre sí (como MuJoCo)
-    if (j.type === "fixed") { child.fixedParent = j.parent; continue; }
+    rj.setContactsEnabled(false);  // las piezas vecinas no chocan entre sí (como MuJoCo)
+    if (j.type === "fixed" || j.type === "spherical") continue;
+
+    const arrow = new THREE.ArrowHelper(axis.clone(), a2.clone(), 0.05, 0xff4fa3, 0.012, 0.008);
+    arrow.userData.layer = "joints";
+    arrow.visible = render.joints;
+    child.group.add(arrow);
 
     const saved = profile?.actuators?.[j.name] || {};
-    const fmax = saved.fmax ?? (j.effort > 0 ? j.effort : 10);
-    const kp = saved.kp ?? fmax * 10;            // fuerza máxima con ~0.1 rad (o m) de error
-    const kd = saved.kd ?? kp * 0.05;
+    const act = j.actuator || {};
+    const fmax = saved.fmax ?? act.fmax ?? (j.effort > 0 ? j.effort : 10);
+    const kp = saved.kp ?? act.kp ?? fmax * 10;            // fuerza máxima con ~0.1 rad (o m) de error
+    const kd = saved.kd ?? act.kd ?? kp * 0.05;
     rj.configureMotorModel(RAPIER.MotorModel.ForceBased);
+    const driven = j.actuated || !!j.mimic;
+    // Pasiva: sin motor de posición, solo su amortiguación.
+    if (!driven && j.damping > 0) rj.configureMotorVelocity(0, j.damping);
     out.joints.push({
-      name: j.name, type: j.type, parent: j.parent, child: j.child, axis,
-      a1, a2, lower: limited ? j.lower : null, upper: limited ? j.upper : null,
+      ...info, lower: limited ? j.lower : null, upper: limited ? j.upper : null,
       effort: j.effort, velocity: j.velocity, rj, kp, kd, fmax,
+      actuated: !!j.actuated, mimic: j.mimic, driven,
       target: limited ? clamp(0, j.lower, j.upper) : 0, q: 0, qd: 0, force: 0, turns: 0, lastRaw: 0,
     });
   }
   // De la base a la punta (el orden del árbol), no el del archivo.
   const rank = new Map(order.map((n, i) => [n, i]));
   out.joints.sort((a, b) => rank.get(a.child) - rank.get(b.child));
+  const byName = new Map(out.joints.map((j) => [j.name, j]));
+  for (const j of out.joints) if (j.mimic) j.master = byName.get(j.mimic.joint) || null;
   return { ...out, warnings };
 }
 
@@ -403,6 +370,9 @@ function measure(j) {
 function gauss() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
 
 function drive(j) {
+  if (!j.driven) return;
+  // Acoplada: sigue a su articulación maestra (como <mimic> en URDF o <equality joint> en MJCF).
+  if (j.mimic && j.master) j.target = j.mimic.multiplier * j.master.target + j.mimic.offset;
   let target = j.lower != null ? clamp(j.target, j.lower, j.upper) : j.target;
   if (params.noiseScale > 0) {
     const span = j.lower != null ? j.upper - j.lower : (j.type === "prismatic" ? 0.2 : Math.PI);
@@ -700,27 +670,30 @@ window.studio = {
       post({ type: "loading", text: "Leyendo el modelo…" });
       const res = await fetch(url);
       if (!res.ok) throw new Error(`No se pudo leer ${url}`);
-      const urdf = parseURDF(await res.text());
+      const text = await res.text();
+      const urdf = /<mujoco[\s>]/.test(text) ? await parseMJCF(text, url) : parseURDF(text);
       clearScene();
       Object.assign(params, profile.physics || {});
       makeWorld();
       simTime = 0;
-      post({ type: "loading", text: `Armando ${urdf.links.length} links…` });
+      post({ type: "loading", text: `Armando ${urdf.links.filter((l) => !l.virtual).length} piezas…` });
       const built = await buildModel(urdf, url.slice(0, url.lastIndexOf("/")), profile);
       if (token !== currentLoad) return;
       model = built;
-      for (const c of profile.cameras || []) addCamera(c);
+      for (const c of [...(urdf.cameras || []), ...(profile.cameras || [])]) addCamera(c);
       for (const o of profile.scene?.objects || []) addObject(o);
-      homeTargets = profile.home || {};
+      homeTargets = { ...(urdf.home || {}), ...(profile.home || {}) };
       this.reset(true);
       sync();
       applyRender();
       frameModel();
       post({
         type: "model", name: model.name, root: model.rootLink,
-        links: [...model.links.keys()],
+        links: [...model.links.values()].filter((l) => !l.virtual).map((l) => l.name),
         joints: model.joints.map((j) => ({ name: j.name, type: j.type, parent: j.parent, child: j.child,
-          lower: j.lower, upper: j.upper, effort: j.effort, velocity: j.velocity, kp: j.kp, kd: j.kd, fmax: j.fmax })),
+          lower: j.lower, upper: j.upper, effort: j.effort, velocity: j.velocity, kp: j.kp, kd: j.kd, fmax: j.fmax,
+          actuated: j.actuated, mimic: j.mimic?.joint ?? null })),
+        floating: model.floating,
         fixedJoints: urdf.joints.filter((j) => j.type === "fixed").length,
         mass: model.mass,
         cameras: cameras.map((c) => c.name),
@@ -733,7 +706,7 @@ window.studio = {
       post({ type: "error", text: e.message });
     }
   },
-  setTarget(name, value) { const j = model?.joints.find((x) => x.name === name); if (j) j.target = value; },
+  setTarget(name, value) { const j = model?.joints.find((x) => x.name === name); if (j?.actuated) j.target = value; },
   /** q: {articulación: valor}. snap: además coloca el robot ahí de golpe (para keyframes). */
   setTargets(q, snap = false) {
     for (const j of model?.joints || []) if (q[j.name] != null) j.target = q[j.name];
@@ -761,32 +734,33 @@ window.studio = {
   /** Coloca el robot de golpe en sus objetivos (o en la pose de reposo), quieto. Cinemática directa desde la raíz. */
   reset(zeroTargets = true) {
     if (!model) return;
-    const byParent = new Map();
+    const value = new Map();
     for (const j of model.joints) {
       if (zeroTargets) j.target = homeTargets[j.name] ?? (j.lower != null ? clamp(0, j.lower, j.upper) : 0);
-      if (!byParent.has(j.parent)) byParent.set(j.parent, []);
-      byParent.get(j.parent).push(j);
     }
-    const movable = new Set(model.joints.map((j) => j.child));
-    const pose = new Map([[model.rootLink, { p: model.links.get(model.rootLink).p0.clone(), q: new THREE.Quaternion() }]]);
+    for (const j of model.joints) {
+      if (j.mimic && j.master) j.target = j.mimic.multiplier * j.master.target + j.mimic.offset;
+      value.set(j.name, j.lower != null ? clamp(j.target, j.lower, j.upper) : j.target);
+    }
+    const byParent = new Map();
+    for (const j of model.allJoints) { if (!byParent.has(j.parent)) byParent.set(j.parent, []); byParent.get(j.parent).push(j); }
+    const rootL = model.links.get(model.rootLink);
+    const pose = new Map([[model.rootLink, { p: rootL.p0.clone(), q: new THREE.Quaternion() }]]);
     const queue = [model.rootLink];
     while (queue.length) {
-      const name = queue.shift(), parent = pose.get(name), pl = model.links.get(name);
-      // Hijos móviles: giran o se desplazan sobre su eje.
+      const name = queue.shift(), parent = pose.get(name);
       for (const j of byParent.get(name) || []) {
-        const v = j.lower != null ? clamp(j.target, j.lower, j.upper) : j.target;
-        const p = j.a1.clone().applyQuaternion(parent.q).add(parent.p);
-        const q = parent.q.clone();
-        if (j.type === "prismatic") p.add(j.axis.clone().applyQuaternion(parent.q).multiplyScalar(v));
-        else q.multiply(new THREE.Quaternion().setFromAxisAngle(j.axis, v));
-        pose.set(j.child, { p, q });
+        if (pose.has(j.child)) continue;
+        if (j.type === "floating") {   // base flotante: vuelve a su pose inicial
+          pose.set(j.child, { p: model.links.get(j.child).p0.clone(), q: new THREE.Quaternion() });
+        } else {
+          const v = value.get(j.name) ?? 0;
+          const R = (j.type === "revolute" || j.type === "continuous") ? new THREE.Quaternion().setFromAxisAngle(j.axis, v) : new THREE.Quaternion();
+          const local = j.a1.clone().sub(j.a2.clone().applyQuaternion(R));
+          if (j.type === "prismatic") local.add(j.axis.clone().multiplyScalar(v));
+          pose.set(j.child, { p: local.applyQuaternion(parent.q).add(parent.p), q: parent.q.clone().multiply(R) });
+        }
         queue.push(j.child);
-      }
-      // Hijos fijos: rígidos con el padre (misma rotación, mismo desplazamiento que en la pose cero).
-      for (const l of model.links.values()) {
-        if (pose.has(l.name) || movable.has(l.name) || l.fixedParent !== name) continue;
-        pose.set(l.name, { p: l.p0.clone().sub(pl.p0).applyQuaternion(parent.q).add(parent.p), q: parent.q.clone() });
-        queue.push(l.name);
       }
     }
     for (const [name, { p, q }] of pose) {

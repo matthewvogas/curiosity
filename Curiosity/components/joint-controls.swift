@@ -19,17 +19,17 @@ struct JointControls: View {
                         Button("Limpiar", action: onClear).buttonStyle(.link)
                         Button("Pose inicial", action: onReset).buttonStyle(.link)
                     }
-                    if joints.isEmpty {
-                        Text("Este robot no tiene articulaciones móviles.").foregroundStyle(Theme.muted)
+                    if !joints.contains(where: \.actuated) {
+                        Text("Este robot no tiene articulaciones con motor.").foregroundStyle(Theme.muted)
                     }
-                    ForEach(joints) { joint in
+                    ForEach(joints.filter(\.actuated)) { joint in
                         ControlRow(joint: joint, state: states.first { $0.name == joint.name }) { onChange(joint.name, $0) }
                     }
                 }
 
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
                     Text("Articulaciones").font(.headline)
-                    Text("Dónde está cada una de verdad. Si algo la bloquea, no llega a su objetivo.")
+                    Text("Dónde está cada una de verdad, incluidas las que se mueven acopladas a otra o sin motor.")
                         .font(.caption).foregroundStyle(Theme.muted)
                     ForEach(joints) { joint in
                         JointBar(joint: joint, state: states.first { $0.name == joint.name })

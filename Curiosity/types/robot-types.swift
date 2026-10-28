@@ -2,13 +2,13 @@ import Foundation
 
 /// Un robot de la biblioteca: de dónde sale su modelo y su perfil.
 struct Robot: Identifiable, Codable, Hashable {
-    enum Source: String, Codable { case bundled, file }
+    enum Source: String, Codable { case bundled, file, library }
 
     var id: String
     var name: String
     var summary: String
     var source: Source
-    /// Ruta del URDF: relativa al bundle (incluidos) o absoluta (importados).
+    /// Ruta del modelo (URDF o MJCF): relativa al bundle (incluidos) o absoluta (importados y de la biblioteca).
     var urdfPath: String
     var license: String?
     var addedAt: Date
@@ -23,6 +23,11 @@ struct RobotModel: Equatable {
     var objects: [SceneObject]
     var warnings: [String]
     var mass: Double = 0
+    /// La base no está fija al suelo (robots móviles, cuadrúpedos, humanoides).
+    var floating = false
+
+    /// Las articulaciones que se controlan (las acopladas y las pasivas se mueven solas).
+    var actuatedJoints: [JointInfo] { joints.filter(\.actuated) }
 }
 
 struct JointInfo: Identifiable, Equatable {
@@ -34,6 +39,10 @@ struct JointInfo: Identifiable, Equatable {
     var kp: Double
     var kd: Double
     var fmax: Double
+    /// Tiene motor propio.
+    var actuated = true
+    /// Sigue a otra articulación (pinzas de dos dedos, dedos acoplados).
+    var mimic: String?
 
     var id: String { name }
 }

@@ -20,11 +20,11 @@ final class UseRobots {
         robots = RobotQueries.bundled() + RobotQueries.imported().sorted { $0.addedAt > $1.addedAt }
     }
 
-    /// Importa un URDF del disco. Sus mallas se leen desde su carpeta; no se copia nada.
-    func importURDF(at url: URL) {
+    /// Importa un URDF o MJCF del disco. Sus mallas se leen desde su carpeta; no se copia nada.
+    func importModel(at url: URL) {
         error = nil
-        guard let name = RobotQueries.urdfName(at: url) else {
-            error = "Ese archivo no parece un URDF (falta <robot name=…>)."
+        guard let name = RobotQueries.modelName(at: url) else {
+            error = "Ese archivo no parece un URDF ni un MJCF."
             return
         }
         let profile = RobotQueries.readProfile(urdfURL: url)
@@ -46,8 +46,23 @@ final class UseRobots {
         }
     }
 
+    /// Un robot recién descargado de la biblioteca: se agrega (o se reabre si ya estaba).
+    func addFromLibrary(id: String, name: String, category: String, modelURL: URL) {
+        var imported = RobotQueries.imported()
+        if !imported.contains(where: { $0.id == id }) {
+            imported.append(Robot(id: id, name: name, summary: category, source: .library, urdfPath: modelURL.path,
+                                  license: "MuJoCo Menagerie", addedAt: .now))
+            do { try RobotQueries.saveImported(imported) } catch {
+                self.error = "No se pudo guardar la biblioteca: \(error.localizedDescription)"
+                return
+            }
+            load()
+        }
+        selectedID = id
+    }
+
     func remove(_ robot: Robot) {
-        guard robot.source == .file else { return }
+        guard robot.source != .bundled else { return }
         let rest = RobotQueries.imported().filter { $0.id != robot.id }
         try? RobotQueries.saveImported(rest)
         load()

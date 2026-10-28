@@ -1,17 +1,19 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Agregar un robot: uno incluido o un URDF del disco.
+/// Agregar un robot: uno incluido, de la biblioteca de MuJoCo Menagerie o un archivo URDF / MJCF.
 struct AddRobotScreen: View {
     @Environment(UseRobots.self) private var robots
+    @Environment(UseLibrary.self) private var library
     @Environment(\.dismiss) private var dismiss
     @State private var importing = false
+    @State private var browsing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 Text("Agregar un robot").font(.title2.weight(.semibold))
-                Text("Cualquier robot descrito en URDF: brazos, manos, móviles, humanoides.")
+                Text("Cualquier robot en URDF o MJCF: brazos, pinzas, manos, cuadrúpedos, humanoides.")
                     .font(.callout).foregroundStyle(Theme.muted)
             }
 
@@ -22,8 +24,12 @@ struct AddRobotScreen: View {
                         dismiss()
                     }
                 }
-                OptionCard(icon: .file, title: "Importar un URDF",
-                           detail: "Elige el archivo .urdf; sus mallas (STL, OBJ o DAE) se leen desde su carpeta.") {
+                OptionCard(icon: .globe, title: "Biblioteca de robots",
+                           detail: "\(library.catalog?.robots.count ?? 0) robots de MuJoCo Menagerie, listos con un clic.") {
+                    browsing = true
+                }
+                OptionCard(icon: .file, title: "Importar un archivo",
+                           detail: "Un URDF (.urdf) o un MJCF (.xml); sus mallas STL, OBJ o DAE se leen desde su carpeta.") {
                     importing = true
                 }
             }
@@ -39,9 +45,10 @@ struct AddRobotScreen: View {
         }
         .padding(Theme.Space.xxl)
         .frame(width: 520)
+        .sheet(isPresented: $browsing, onDismiss: { if library.isAddedAny { dismiss() } }) { LibraryScreen() }
         .fileImporter(isPresented: $importing, allowedContentTypes: [UTType(filenameExtension: "urdf") ?? .xml, .xml]) { result in
             if case .success(let url) = result {
-                robots.importURDF(at: url)
+                robots.importModel(at: url)
                 if robots.error == nil { dismiss() }
             }
         }

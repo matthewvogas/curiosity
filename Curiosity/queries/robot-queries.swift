@@ -40,7 +40,7 @@ enum RobotQueries {
     static func fileURL(for robot: Robot) -> URL? {
         switch robot.source {
         case .bundled: Bundle.main.resourceURL?.appendingPathComponent(robot.urdfPath)
-        case .file: URL(fileURLWithPath: robot.urdfPath)
+        case .file, .library: URL(fileURLWithPath: robot.urdfPath)
         }
     }
 
@@ -82,11 +82,16 @@ enum RobotQueries {
         return url
     }
 
-    /// Nombre del robot según el propio URDF (<robot name="…">).
-    static func urdfName(at url: URL) -> String? {
-        guard let text = try? String(contentsOf: url, encoding: .utf8),
-              let range = text.range(of: #"<robot[^>]*name\s*=\s*"([^"]+)""#, options: .regularExpression) else { return nil }
-        let tag = String(text[range])
-        return tag.components(separatedBy: "\"").dropFirst().first
+    /// Nombre del robot según el propio archivo: <robot name="…"> (URDF) o <mujoco model="…"> (MJCF).
+    /// nil si no es ninguno de los dos.
+    static func modelName(at url: URL) -> String? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        for pattern in [#"<robot[^>]*\sname\s*=\s*"([^"]+)""#, #"<mujoco[^>]*\smodel\s*=\s*"([^"]+)""#] {
+            if let range = text.range(of: pattern, options: .regularExpression) {
+                return String(text[range]).components(separatedBy: "\"").dropFirst().first
+            }
+        }
+        if text.contains("<mujoco") { return url.deletingPathExtension().lastPathComponent }
+        return nil
     }
 }

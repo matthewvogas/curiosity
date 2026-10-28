@@ -17,7 +17,7 @@ final class SimulationQueries: NSObject, WKScriptMessageHandler {
     static func modelURL(for robot: Robot) -> String {
         switch robot.source {
         case .bundled: "curiosity://local/app/\(robot.urdfPath)"
-        case .file: "curiosity://local/fs" + (robot.urdfPath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? robot.urdfPath)
+        case .file, .library: "curiosity://local/fs" + (robot.urdfPath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? robot.urdfPath)
         }
     }
 

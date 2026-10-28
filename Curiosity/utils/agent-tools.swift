@@ -65,7 +65,7 @@ enum AgentTools {
     // MARK: - Prompt del sistema
 
     static func systemPrompt(model: RobotModel, robotName: String) -> String {
-        let joints = model.joints.map { j -> String in
+        let joints = model.actuatedJoints.map { j -> String in
             let range = (j.lower != nil && j.upper != nil)
                 ? "\(Units.format(j.lower!, jointType: j.type)) a \(Units.format(j.upper!, jointType: j.type))"
                 : "sin límite"
@@ -77,9 +77,9 @@ enum AgentTools {
         real (gravedad, choques, fricción, motores con fuerza limitada) a través de herramientas. La \
         persona te pide tareas en lenguaje natural; tú las conviertes en movimientos.
 
-        Robot: \(robotName) (modelo «\(model.name)»), \(model.links.count) piezas.
-        Articulaciones:
-        \(joints)
+        Robot: \(robotName) (modelo «\(model.name)»), \(model.links.count) piezas, base \(model.floating ? "libre (puede caerse)" : "fija").
+        Articulaciones con motor (las únicas que puedes mandar):
+        \(joints)\(passive(model))
         Cámaras montadas: \(cameras).
 
         Cómo trabajar:
@@ -90,6 +90,13 @@ enum AgentTools {
         - Esto es una simulación: no hay riesgo físico, pero explica en una frase qué vas a hacer.
         - Responde en el idioma de la persona, breve y sin tecnicismos innecesarios.
         """
+    }
+
+    private static func passive(_ model: RobotModel) -> String {
+        let rest = model.joints.filter { !$0.actuated }
+        guard !rest.isEmpty else { return "" }
+        let list = rest.map { j in j.mimic.map { m in "\(j.name) (sigue a \(m))" } ?? "\(j.name) (sin motor)" }
+        return "\nSe mueven solas: " + list.joined(separator: ", ") + "."
     }
 
     // MARK: - Estado para la IA

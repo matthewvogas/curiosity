@@ -19,12 +19,15 @@ targets:
     platform: macOS
     sources:
       - path: Curiosity
-        excludes: ["resources/studio/**", "resources/robots/**", "resources/Info.plist"]
+        excludes: ["resources/studio/**", "resources/robots/**", "resources/library/**", "resources/Info.plist"]
       # Carpetas copiadas tal cual: el motor 3D y los robots incluidos.
       - path: Curiosity/resources/studio
         type: folder
         buildPhase: resources
       - path: Curiosity/resources/robots
+        type: folder
+        buildPhase: resources
+      - path: Curiosity/resources/library
         type: folder
         buildPhase: resources
     info:

@@ -50,7 +50,7 @@ final class UseSimulation {
 
     /// Todas las articulaciones al objetivo cero (el «Clear all» de MuJoCo).
     func clearControls() {
-        for j in model?.joints ?? [] {
+        for j in model?.actuatedJoints ?? [] {
             let zero = j.lower.map { lo in min(j.upper ?? 0, max(lo, 0)) } ?? 0
             setTarget(j.name, zero)
         }
@@ -205,12 +205,13 @@ final class UseSimulation {
         let joints = (m["joints"] as? [[String: Any]] ?? []).map { j in
             JointInfo(name: j["name"] as? String ?? "", type: j["type"] as? String ?? "revolute",
                       lower: (j["lower"] as? NSNumber)?.doubleValue, upper: (j["upper"] as? NSNumber)?.doubleValue,
-                      effort: double(j["effort"]), kp: double(j["kp"]), kd: double(j["kd"]), fmax: double(j["fmax"]))
+                      effort: double(j["effort"]), kp: double(j["kp"]), kd: double(j["kd"]), fmax: double(j["fmax"]),
+                      actuated: j["actuated"] as? Bool ?? true, mimic: j["mimic"] as? String)
         }
         let objects = (m["objects"] as? [[String: Any]] ?? []).map(parseObject)
         return RobotModel(name: m["name"] as? String ?? "robot", links: m["links"] as? [String] ?? [],
                           joints: joints, cameras: m["cameras"] as? [String] ?? [], objects: objects,
-                          warnings: m["warnings"] as? [String] ?? [], mass: double(m["mass"]))
+                          warnings: m["warnings"] as? [String] ?? [], mass: double(m["mass"]), floating: m["floating"] as? Bool ?? false)
     }
 
     private static func parseObject(_ o: [String: Any]) -> SceneObject {

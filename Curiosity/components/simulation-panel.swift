@@ -97,6 +97,8 @@ struct SimulationPanel: View {
                     Stat("Paso de física", String(format: "%.3f ms", state.stepMs))
                     Stat("Piezas", "\(model?.links.count ?? 0)")
                     Stat("Articulaciones móviles", "\(model?.joints.count ?? 0)")
+                    Stat("Con motor", "\(model?.actuatedJoints.count ?? 0)")
+                    Stat("Base", model?.floating == true ? "Libre" : "Fija")
                     Stat("Masa total", String(format: "%.3f kg", model?.mass ?? 0))
                     Stat("Contactos", "\(state.contacts)")
                 }

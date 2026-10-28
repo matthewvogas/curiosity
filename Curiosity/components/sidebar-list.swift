@@ -23,7 +23,7 @@ struct SidebarList: View {
                     .listRowBackground(Color.clear)
                     .contextMenu {
                         Button("Mostrar en Finder") { onReveal(robot) }
-                        if robot.source == .file {
+                        if robot.source != .bundled {
                             Divider()
                             Button("Quitar de la biblioteca", role: .destructive) { onRemove(robot) }
                         }
@@ -67,6 +67,14 @@ private struct RobotRow: View {
     let action: () -> Void
     @State private var hovering = false
 
+    private static func origin(_ robot: Robot) -> String {
+        switch robot.source {
+        case .bundled: "Incluido"
+        case .library: robot.summary
+        case .file: "Importado"
+        }
+    }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: Theme.Space.s) {
@@ -74,7 +82,7 @@ private struct RobotRow: View {
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(robot.name).font(.body.weight(selected ? .semibold : .regular)).lineLimit(1)
-                    Text(robot.source == .bundled ? "Incluido" : "Importado")
+                    Text(Self.origin(robot))
                         .font(.caption).foregroundStyle(Theme.muted).lineLimit(1)
                 }
                 Spacer(minLength: 0)

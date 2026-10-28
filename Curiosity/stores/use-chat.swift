@@ -144,14 +144,14 @@ final class UseChat {
                 var unknown: [String] = []
                 for t in input["targets"] as? [[String: Any]] ?? [] {
                     guard let joint = t["joint"] as? String, let value = (t["value"] as? NSNumber)?.doubleValue else { continue }
-                    guard let info = types[joint] else { unknown.append(joint); continue }
+                    guard let info = types[joint], info.actuated else { unknown.append(joint); continue }
                     var v = Units.fromDisplay(value, jointType: info.type)
                     if let lo = info.lower, let hi = info.upper { v = min(hi, max(lo, v)) }
                     simulation.setTarget(joint, v)
                 }
                 let seconds = min(5, max(0.2, (input["seconds"] as? NSNumber)?.doubleValue ?? 1.5))
                 await simulation.run(seconds: seconds)
-                finish(unknown.isEmpty ? "" : "No existe: \(unknown.joined(separator: ", "))", failed: !unknown.isEmpty)
+                finish(unknown.isEmpty ? "" : "Sin motor o no existe: \(unknown.joined(separator: ", "))", failed: !unknown.isEmpty)
                 var out = currentState(model)
                 if !unknown.isEmpty { out["unknown_joints"] = unknown }
                 return result(id, text: AgentTools.json(out))
