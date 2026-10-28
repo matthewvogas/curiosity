@@ -60,7 +60,6 @@ private struct ChatWelcome: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                Icon(name: .sparkles, size: 22).foregroundStyle(Theme.muted)
                 Text("Habla con \(robotName)").font(.title2.weight(.semibold))
                 Text("Pídele tareas en tus palabras. La IA mira la escena, planea y mueve el robot en la simulación.")
                     .font(.callout).foregroundStyle(Theme.muted)
@@ -69,11 +68,8 @@ private struct ChatWelcome: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(suggestions, id: \.self) { s in
                         Button { onPick(s) } label: {
-                            HStack {
-                                Text(s).font(.callout).multilineTextAlignment(.leading)
-                                Spacer(minLength: 0)
-                                Icon(name: .chevron, size: 10).foregroundStyle(Theme.faint)
-                            }
+                            Text(s).font(.callout).multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, Theme.Space.m)
                             .padding(.vertical, 9)
                             .background(Theme.fill, in: .rect(cornerRadius: Theme.Radius.card))
@@ -84,7 +80,7 @@ private struct ChatWelcome: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
-                    Label("Conecta un modelo de IA", systemImage: IconName.key.rawValue).font(.callout.weight(.semibold))
+                    Text("Conecta un modelo de IA").font(.callout.weight(.semibold))
                     Text("Pega tu API key de Anthropic. Se guarda en el Llavero de tu Mac.")
                         .font(.caption).foregroundStyle(Theme.muted)
                     Button("Abrir Ajustes", action: onOpenSettings)
@@ -119,15 +115,11 @@ private struct ChatRow: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .action(let title, let detail, let running, let failed):
+            // Las acciones de la IA, discretas: solo texto (con un indicador mientras corren).
             HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-                Group {
-                    if running { ProgressView().controlSize(.mini) }
-                    else { Icon(name: failed ? .warning : .check, size: 11) }
-                }
-                .foregroundStyle(failed ? Theme.red : Theme.muted)
-                .frame(width: 14)
+                if running { ProgressView().controlSize(.mini) }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.callout).foregroundStyle(Theme.muted)
+                    Text(title).font(.callout).foregroundStyle(failed ? Theme.red : Theme.muted)
                     if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(failed ? Theme.red : Theme.faint) }
                 }
             }
@@ -149,11 +141,8 @@ private struct NoticeRow: View {
     let isError: Bool
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-            Icon(name: isError ? .warning : .info, size: 11)
-            Text(text).font(.callout)
-        }
-        .foregroundStyle(isError ? Theme.red : Theme.muted)
+        Text(text).font(.callout)
+            .foregroundStyle(isError ? Theme.red : Theme.muted)
     }
 }
 

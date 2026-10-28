@@ -20,6 +20,7 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
 import RAPIER_MODULE from "./lib/rapier.es.js";
 
 const RAPIER = RAPIER_MODULE;
@@ -48,8 +49,12 @@ let insetRight = 0;     // px que tapa un panel flotante a la derecha
 let homeTargets = {};  // pose de reposo del perfil (si no, cero)
 const params = {
   gravity: 9.81, timestep: 1 / 500, iterations: 8, friction: 0.7, restitution: 0.05,
-  selfCollision: false, fixedBase: true, showCollision: false, showFrames: false,
+  selfCollision: false, fixedBase: true,
+  noiseScale: 0, noiseRate: 0,   // ruido en el control (como MuJoCo): escala relativa al rango y tiempo de correlación (s)
 };
+// Qué se dibuja (panel «Visualización»): como los flags de render de MuJoCo.
+const render = { contacts: true, joints: false, collision: false, com: false, transparent: false, grid: true, shadows: true };
+let stepMs = 0;   // profiler: tiempo medio de un paso de física
 
 // ---------- utilidades de geometría ----------
 const vec = (s, d = [0, 0, 0]) => (s ? s.trim().split(/\s+/).map(Number) : d);
@@ -121,6 +126,28 @@ function parseURDF(text) {
     };
   });
   return { name: robot.getAttribute("name") || "robot", links, joints };
+}
+
+const debugMaterials = {
+  collision: new THREE.MeshBasicMaterial({ color: 0x4ea7fc, wireframe: true, transparent: true, opacity: 0.55 }),
+  com: new THREE.MeshBasicMaterial({ color: 0xf2c94c, depthTest: false }),
+};
+
+function applyRender() {
+  if (!root) return;
+  root.traverse((o) => {
+    const layer = o.userData?.layer;
+    if (layer) o.visible = !!render[layer];
+    if (o.userData?.robotVisual && o.material) {
+      o.material.transparent = render.transparent || o.userData.baseOpacity < 1;
+      o.material.opacity = render.transparent ? 0.35 : o.userData.baseOpacity;
+      o.material.depthWrite = !render.transparent;
+    }
+  });
+  if (grid) grid.visible = render.grid;
+  if (ground) ground.visible = render.shadows;
+  if (renderer) renderer.shadowMap.enabled = render.shadows;
+  for (const o of root.children) o.traverse?.((m) => { if (m.isMesh) m.castShadow = render.shadows && !m.userData?.layer; });
 }
 
 // ---------- mallas ----------
@@ -217,7 +244,7 @@ async function buildModel(urdf, base, profile) {
   }
 
   const warnings = [];
-  const out = { name: urdf.name, links: new Map(), joints: [], rootLink };
+  const out = { name: urdf.name, links: new Map(), joints: [], rootLink, mass: 0 };
   for (const name of order) {
     const l = links.get(name), { p, q } = pose.get(name);
     // Cuerpo alineado con el mundo en la pose cero; las formas llevan la rotación del link.
@@ -236,7 +263,13 @@ async function buildModel(urdf, base, profile) {
         const obj = v.geometry.type === "mesh" ? await loadMesh(v.geometry.file, base) : new THREE.Mesh(primitive(v.geometry));
         if (v.geometry.type === "mesh") obj.scale.set(...v.geometry.scale);
         const mat = materialFor(v.color);
-        obj.traverse((o) => { if (o.isMesh) { if (v.geometry.type !== "mesh" || v.color || !o.material?.map) o.material = mat; o.castShadow = o.receiveShadow = true; } });
+        obj.traverse((o) => {
+          if (!o.isMesh) return;
+          if (v.geometry.type !== "mesh" || v.color || !o.material?.map) o.material = mat.clone();
+          o.castShadow = o.receiveShadow = true;
+          o.userData.robotVisual = true;
+          o.userData.baseOpacity = o.material.opacity ?? 1;
+        });
         const holder = new THREE.Group();
         holder.applyMatrix4(linkFrame);
         const off = new THREE.Group();
@@ -269,6 +302,14 @@ async function buildModel(urdf, base, profile) {
         const c = world.createCollider(cd, body);
         c.userData = { link: name };
         colliders.push(c);
+        try {
+          const v = [];
+          for (let i = 0; i < pts.length; i += 3) v.push(new THREE.Vector3(pts[i], pts[i + 1], pts[i + 2]));
+          const hull = new THREE.Mesh(new ConvexGeometry(v), debugMaterials.collision);
+          hull.userData.layer = "collision";
+          hull.visible = render.collision;
+          group.add(hull);
+        } catch { /* sin malla de depuración */ }
       } catch (e) { warnings.push(`${name}: ${e.message}`); }
     }
 
@@ -283,6 +324,13 @@ async function buildModel(urdf, base, profile) {
       warnings.push(`${name}: sin masa ni colisión; se le dan 10 g`);
     }
 
+    const com = new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 8), debugMaterials.com);
+    const lc = body.localCom();
+    com.position.set(lc.x, lc.y, lc.z);
+    com.userData.layer = "com";
+    com.visible = render.com;
+    group.add(com);
+    out.mass += l.inertial?.mass > 0 ? l.inertial.mass : colliders.reduce((m, c) => m + c.mass(), 0);
     out.links.set(name, { name, body, group, q0: q.clone(), p0: p.clone(), colliders });
   }
 
@@ -301,6 +349,12 @@ async function buildModel(urdf, base, profile) {
     const limited = j.type !== "continuous" && j.lower != null && j.upper != null && j.upper > j.lower;
     if (limited && j.type !== "fixed") { data.limitsEnabled = true; data.limits = [j.lower, j.upper]; }
     const rj = world.createImpulseJoint(data, parent.body, child.body, true);
+    if (j.type !== "fixed") {
+      const arrow = new THREE.ArrowHelper(axis.clone(), new THREE.Vector3(), 0.05, 0xff4fa3, 0.012, 0.008);
+      arrow.userData.layer = "joints";
+      arrow.visible = render.joints;
+      child.group.add(arrow);
+    }
     rj.setContactsEnabled(false);  // los links vecinos no chocan entre sí (como MuJoCo)
     if (j.type === "fixed") { child.fixedParent = j.parent; continue; }
 
@@ -316,6 +370,9 @@ async function buildModel(urdf, base, profile) {
       target: limited ? clamp(0, j.lower, j.upper) : 0, q: 0, qd: 0, force: 0, turns: 0, lastRaw: 0,
     });
   }
+  // De la base a la punta (el orden del árbol), no el del archivo.
+  const rank = new Map(order.map((n, i) => [n, i]));
+  out.joints.sort((a, b) => rank.get(a.child) - rank.get(b.child));
   return { ...out, warnings };
 }
 
@@ -343,8 +400,18 @@ function measure(j) {
 }
 
 /** Actuador de posición con fuerza máxima: el objetivo efectivo nunca pide más que fmax. */
+function gauss() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+
 function drive(j) {
-  const target = j.lower != null ? clamp(j.target, j.lower, j.upper) : j.target;
+  let target = j.lower != null ? clamp(j.target, j.lower, j.upper) : j.target;
+  if (params.noiseScale > 0) {
+    const span = j.lower != null ? j.upper - j.lower : (j.type === "prismatic" ? 0.2 : Math.PI);
+    const rate = Math.max(params.noiseRate, params.timestep);
+    const a = Math.exp(-params.timestep / rate);
+    j.noise = a * (j.noise || 0) + Math.sqrt(1 - a * a) * params.noiseScale * gauss();
+    target += j.noise * span / 2;
+    if (j.lower != null) target = clamp(target, j.lower, j.upper);
+  } else j.noise = 0;
   const reach = j.fmax / Math.max(j.kp, 1e-6);
   const eff = j.q + clamp(target - j.q, -reach, reach);
   j.rj.configureMotorPosition(eff, j.kp, j.kd);
@@ -422,8 +489,10 @@ function addCamera(spec) {
 
 // ---------- paso de simulación ----------
 function physicsStep() {
+  const t0 = performance.now();
   for (const j of model?.joints || []) drive(j);
   world.step(eventQueue);
+  stepMs = 0.98 * stepMs + 0.02 * (performance.now() - t0);
   simTime += params.timestep;
   for (const j of model?.joints || []) {
     const q = measure(j);
@@ -482,7 +551,7 @@ function postState(now) {
   if (now - lastPost < 100) return;
   lastPost = now;
   post({
-    type: "state", t: simTime, rtf, paused, mode,
+    type: "state", t: simTime, rtf, paused, mode, stepMs,
     joints: (model?.joints || []).map((j) => ({ name: j.name, q: j.q, qd: j.qd, target: j.target, force: j.force })),
     contacts: readout.contacts, maxForce: readout.maxForce,
     links: Object.entries(readout.links).map(([name, force]) => ({ name, force })),
@@ -500,7 +569,7 @@ function frame(now) {
     if (accum > params.timestep * 4) accum = 0;  // no alcanza: se desacelera en vez de acumular
     rtf = dtWall > 0 ? 0.9 * rtf + 0.1 * ((simTime - t0) / dtWall) : rtf;
   } else rtf = 0;
-  if (world) { sync(); updateContacts(); }
+  if (world) { sync(); if (render.contacts) updateContacts(); else { markers.count = 0; readout = { contacts: 0, maxForce: 0, links: {} }; } }
   pullDragged();
   controls.update();
   renderer.render(scene, camera);
@@ -645,6 +714,7 @@ window.studio = {
       homeTargets = profile.home || {};
       this.reset(true);
       sync();
+      applyRender();
       frameModel();
       post({
         type: "model", name: model.name, root: model.rootLink,
@@ -652,6 +722,7 @@ window.studio = {
         joints: model.joints.map((j) => ({ name: j.name, type: j.type, parent: j.parent, child: j.child,
           lower: j.lower, upper: j.upper, effort: j.effort, velocity: j.velocity, kp: j.kp, kd: j.kd, fmax: j.fmax })),
         fixedJoints: urdf.joints.filter((j) => j.type === "fixed").length,
+        mass: model.mass,
         cameras: cameras.map((c) => c.name),
         objects: objects.map(({ id, shape, size, mass, color, pos, yaw, fixed, name }) => ({ id, shape, size, mass, color, pos, yaw, fixed, name })),
         physics: { ...params },
@@ -729,7 +800,7 @@ window.studio = {
     sync();
   },
   /** Imagen JPEG (data URL) de la vista principal o de una cámara montada, para que la IA «mire». */
-  capture(cameraName = null, width = 768) {
+  capture(cameraName = null, width = 768, format = "jpeg") {
     const c = cameras.find((x) => x.name === cameraName);
     const cam = c ? c.cam : camera;
     const w = width, h = Math.round(width / (c ? c.cam.aspect : camera.aspect));
@@ -754,7 +825,7 @@ window.studio = {
     tmp.width = w; tmp.height = h;
     tmp.getContext("2d").putImageData(img, 0, 0);
     ctx.drawImage(tmp, 0, 0);
-    return canvas.toDataURL("image/jpeg", 0.8);
+    return format === "png" ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.8);
   },
   resetObjects(list) {
     for (const o of [...objects]) removeObject(o.id);
@@ -775,6 +846,29 @@ window.studio = {
   setSpeed(x) { speed = x; },
   setMode(m) { mode = m; },
   view(name) { frameModel(name); },
+  setRender(opts) { Object.assign(render, opts); applyRender(); },
+  /** Estado completo (articulaciones y objetos) para un keyframe o para copiarlo. */
+  getKeyframe() {
+    return {
+      time: simTime,
+      q: Object.fromEntries((model?.joints || []).map((j) => [j.name, j.q])),
+      objects: objects.map((o) => { const t = o.body.translation(), r = o.body.rotation(); return { id: o.id, pos: [t.x, t.y, t.z], quat: [r.x, r.y, r.z, r.w] }; }),
+    };
+  },
+  setKeyframe(k) {
+    if (!model || !k) return;
+    for (const j of model.joints) if (k.q?.[j.name] != null) j.target = k.q[j.name];
+    this.reset(false);
+    for (const s of k.objects || []) {
+      const o = objects.find((x) => x.id === s.id);
+      if (!o) continue;
+      o.body.setTranslation({ x: s.pos[0], y: s.pos[1], z: s.pos[2] }, true);
+      o.body.setRotation({ x: s.quat[0], y: s.quat[1], z: s.quat[2], w: s.quat[3] }, true);
+      o.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      o.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    }
+    sync();
+  },
   setInsets({ right = 0 }) { if (right !== insetRight) { insetRight = right; resize(); } },
   /** Pose actual, para guardar un keyframe. */
   snapshot() { return Object.fromEntries((model?.joints || []).map((j) => [j.name, j.q])); },

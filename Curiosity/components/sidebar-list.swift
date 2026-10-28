@@ -14,7 +14,7 @@ struct SidebarList: View {
             Section {
                 ForEach(robots) { robot in
                     RobotRow(robot: robot, selected: robot.id == selectedID) { onSelect(robot) }
-                        .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
+                        .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
                         .listRowBackground(Color.clear)
                         .contextMenu {
                             Button("Mostrar en Finder") { onReveal(robot) }
@@ -47,9 +47,9 @@ private struct RobotRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: Theme.Space.m) {
-                Icon(name: selected ? .robotFill : .robot, size: 15)
-                    .frame(width: 22)
+            HStack(spacing: Theme.Space.s) {
+                Icon(name: selected ? .robotFill : .robot, size: 14)
+                    .frame(width: 20)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(robot.name).font(.body.weight(selected ? .semibold : .regular)).lineLimit(1)
                     Text(robot.source == .bundled ? "Incluido" : "Importado")
@@ -57,8 +57,8 @@ private struct RobotRow: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, Theme.Space.s)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(selected ? Theme.selection : hovering ? Theme.hover : .clear,
                         in: .rect(cornerRadius: Theme.Radius.row))

@@ -40,7 +40,23 @@ final class SimulationQueries: NSObject, WKScriptMessageHandler {
         send("studio.setGains", joint, gains)
     }
     func setPhysics(_ p: PhysicsSettings) {
-        send("studio.setPhysics", ["gravity": p.gravity, "friction": p.friction, "restitution": p.restitution, "selfCollision": p.selfCollision])
+        send("studio.setPhysics", [
+            "gravity": p.gravity, "friction": p.friction, "restitution": p.restitution, "selfCollision": p.selfCollision,
+            "timestep": p.timestep, "iterations": Int(p.iterations), "noiseScale": p.noiseScale, "noiseRate": p.noiseRate,
+        ])
+    }
+    func setRender(_ r: RenderOptions) {
+        send("studio.setRender", ["contacts": r.contacts, "joints": r.joints, "collision": r.collision, "com": r.com,
+                                  "transparent": r.transparent, "grid": r.grid, "shadows": r.shadows])
+    }
+    func setKeyframe(json: String) {
+        if ready { webView?.evaluateJavaScript("studio.setKeyframe(\(json))") }
+    }
+
+    /// Estado completo en JSON (keyframe / copiar estado).
+    func keyframe() async throws -> String {
+        let value = try await evaluate("return JSON.stringify(studio.getKeyframe())", [:])
+        return value as? String ?? "{}"
     }
     func pause(_ on: Bool) { send("studio.pause", on) }
     func step(_ n: Int = 1) { send("studio.step", n) }
@@ -55,9 +71,10 @@ final class SimulationQueries: NSObject, WKScriptMessageHandler {
         return (id as? NSNumber)?.intValue ?? 0
     }
 
-    /// Imagen JPEG de la vista principal o de una cámara montada.
-    func capture(camera: String?) async throws -> Data {
-        let value = try await evaluate("return studio.capture(camera)", ["camera": camera ?? NSNull()])
+    /// Imagen de la vista principal o de una cámara montada (JPEG para la IA, PNG para capturas).
+    func capture(camera: String?, width: Int = 768, png: Bool = false) async throws -> Data {
+        let value = try await evaluate("return studio.capture(camera, width, format)",
+                                       ["camera": camera ?? NSNull(), "width": width, "format": png ? "png" : "jpeg"])
         guard let url = value as? String, let comma = url.firstIndex(of: ","),
               let data = Data(base64Encoded: String(url[url.index(after: comma)...])) else {
             throw NSError(domain: "Curiosity", code: 1, userInfo: [NSLocalizedDescriptionKey: "No se pudo capturar la imagen."])

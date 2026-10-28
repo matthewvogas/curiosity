@@ -22,6 +22,7 @@ struct RobotModel: Equatable {
     var cameras: [String]
     var objects: [SceneObject]
     var warnings: [String]
+    var mass: Double = 0
 }
 
 struct JointInfo: Identifiable, Equatable {
@@ -54,6 +55,10 @@ struct SimulationState: Equatable {
     var contacts = 0
     var maxForce: Double = 0
     var objectPositions: [Int: [Double]] = [:]
+    /// Fuerza de contacto por pieza del robot (N).
+    var linkForces: [String: Double] = [:]
+    /// Profiler: milisegundos por paso de física.
+    var stepMs: Double = 0
 }
 
 /// Un objeto libre de la escena (metros, kg).
@@ -74,4 +79,29 @@ struct PhysicsSettings: Equatable {
     var friction = 0.7
     var restitution = 0.05
     var selfCollision = false
+    /// Paso de tiempo (s) e iteraciones del solver.
+    var timestep = 1.0 / 500
+    var iterations = 8.0
+    /// Ruido en el control, como MuJoCo: escala (fracción del rango) y tiempo de correlación (s).
+    var noiseScale = 0.0
+    var noiseRate = 0.0
+}
+
+/// Qué se dibuja en la escena (flags de render de MuJoCo).
+struct RenderOptions: Equatable {
+    var contacts = true
+    var joints = false
+    var collision = false
+    var com = false
+    var transparent = false
+    var grid = true
+    var shadows = true
+}
+
+/// Un estado guardado (posiciones de las articulaciones y de los objetos), como los keyframes de MuJoCo.
+struct Keyframe: Codable, Equatable, Identifiable {
+    var id = UUID()
+    var name: String
+    var json: String
+    var savedAt = Date()
 }

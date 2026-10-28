@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// Escena: física (gravedad, fricción, rebote), objetos y agregar uno nuevo.
+/// Escena: los objetos y agregar uno nuevo.
 struct SceneControls: View {
-    @Binding var physics: PhysicsSettings
     let objects: [SceneObject]
     let onAdd: (SceneObject) -> Void
     let onRemove: (Int) -> Void
@@ -15,14 +14,6 @@ struct SceneControls: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.xl) {
-                section("Física") {
-                    LabeledSlider(title: "Gravedad", value: $physics.gravity, range: 0...20, format: "%.2f m/s²")
-                    LabeledSlider(title: "Fricción", value: $physics.friction, range: 0...1.5, format: "%.2f")
-                    LabeledSlider(title: "Rebote", value: $physics.restitution, range: 0...0.9, format: "%.2f")
-                    Toggle("Choques del robot consigo mismo", isOn: $physics.selfCollision)
-                        .toggleStyle(.switch).controlSize(.small).font(.callout)
-                }
-
                 section("Objetos") {
                     if objects.isEmpty {
                         Text("No hay objetos. Agrega uno abajo o pídeselo a la IA.").font(.callout).foregroundStyle(Theme.muted)

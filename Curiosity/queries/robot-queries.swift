@@ -52,6 +52,36 @@ enum RobotQueries {
         return json
     }
 
+    // MARK: - Keyframes (por robot, en Application Support/Curiosity/keyframes/<id>.json)
+
+    private static func keyframesFile(_ robotID: String) -> URL {
+        let dir = folder.appendingPathComponent("keyframes", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let safe = robotID.replacingOccurrences(of: "/", with: "_")
+        return dir.appendingPathComponent("\(safe).json")
+    }
+
+    static func keyframes(robotID: String) -> [Keyframe] {
+        guard let data = try? Data(contentsOf: keyframesFile(robotID)) else { return [] }
+        return (try? JSONDecoder().decode([Keyframe].self, from: data)) ?? []
+    }
+
+    static func saveKeyframes(_ keys: [Keyframe], robotID: String) throws {
+        try JSONEncoder().encode(keys).write(to: keyframesFile(robotID), options: .atomic)
+    }
+
+    /// Guarda una captura de pantalla en Imágenes/Curiosity y devuelve dónde quedó.
+    static func saveScreenshot(_ png: Data, robotName: String) throws -> URL {
+        let dir = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Curiosity", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let stamp = Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false))
+            .replacingOccurrences(of: ":", with: ".")
+        let url = dir.appendingPathComponent("\(robotName) \(stamp).png")
+        try png.write(to: url)
+        return url
+    }
+
     /// Nombre del robot según el propio URDF (<robot name="…">).
     static func urdfName(at url: URL) -> String? {
         guard let text = try? String(contentsOf: url, encoding: .utf8),

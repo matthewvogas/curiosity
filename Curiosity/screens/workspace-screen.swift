@@ -10,9 +10,11 @@ struct WorkspaceScreen: View {
     @Environment(UseRobots.self) private var robots
     @Environment(\.openSettings) private var openSettings
 
-    enum PanelTab: Hashable { case chat, control, scene }
-    @State private var tab: PanelTab = .chat
+    enum PanelTab: String, Hashable { case chat, control, simulation, scene }
+    /// Se recuerda la última pestaña.
+    @AppStorage("panel.tab") private var tab: PanelTab = .chat
     @State private var panelVisible = true
+    @State private var showingModel = false
 
     private static let speeds: [Double] = [0.25, 0.5, 1, 2]
 
@@ -32,14 +34,23 @@ struct WorkspaceScreen: View {
                 StageMessage(text: loading, isError: false).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            SimHUD(time: simulation.state.time, realTimeFactor: simulation.state.realTimeFactor,
-                   contacts: simulation.state.contacts, paused: simulation.state.paused)
-                .padding(Theme.Space.xl)
+            HStack(spacing: Theme.Space.s) {
+                SimHUD(time: simulation.state.time, realTimeFactor: simulation.state.realTimeFactor,
+                       contacts: simulation.state.contacts, paused: simulation.state.paused)
+                if let notice = simulation.notice {
+                    Text(notice).font(.caption.weight(.medium))
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .glassEffect(.regular, in: .capsule)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
+            }
+            .animation(.snappy, value: simulation.notice)
+            .padding(Theme.Space.xl)
         }
         // El panel sí respeta la toolbar: empieza debajo de ella.
         .overlay(alignment: .trailing) {
             if panelVisible {
-                FloatingPanel(tabs: [(.chat, "Chat", .chat), (.control, "Control", .sliders), (.scene, "Escena", .scene)],
+                FloatingPanel(tabs: [(.chat, "Chat"), (.control, "Control"), (.simulation, "Simulación"), (.scene, "Escena")],
                               selection: $tab) {
                     switch tab {
                     case .chat:
@@ -49,9 +60,22 @@ struct WorkspaceScreen: View {
                                  onSend: chat.send, onStop: chat.stop, onOpenSettings: { openSettings() })
                     case .control:
                         JointControls(joints: simulation.model?.joints ?? [], states: simulation.state.joints,
-                                      onChange: simulation.setTarget, onReset: simulation.reset)
+                                      onChange: simulation.setTarget, onClear: simulation.clearControls,
+                                      onReset: simulation.reset)
+                    case .simulation:
+                        SimulationPanel(state: simulation.state, model: simulation.model,
+                                        physics: $simulation.physics, render: $simulation.render,
+                                        keyframes: simulation.keyframes, speed: simulation.speed,
+                                        onTogglePause: simulation.togglePause, onReset: simulation.reset,
+                                        onReload: simulation.reload, onAlign: simulation.align,
+                                        onCopyState: { Task { await simulation.copyState() } },
+                                        onSpeed: simulation.setSpeed,
+                                        onSaveKey: { Task { await simulation.saveKeyframe() } },
+                                        onLoadKey: simulation.loadKeyframe, onDeleteKey: simulation.deleteKeyframe,
+                                        onScreenshot: { Task { await simulation.screenshot() } },
+                                        onShowModel: { showingModel = true })
                     case .scene:
-                        SceneControls(physics: $simulation.physics, objects: simulation.objects,
+                        SceneControls(objects: simulation.objects,
                                       onAdd: { o in Task { try? await simulation.addObject(o) } },
                                       onRemove: simulation.removeObject)
                     }
@@ -65,6 +89,9 @@ struct WorkspaceScreen: View {
         .navigationTitle(robot.name)
         .navigationSubtitle(subtitle)
         .toolbar { toolbar }
+        .sheet(isPresented: $showingModel) {
+            ModelSheet(title: simulation.model?.name ?? robot.name, text: simulation.modelSummary)
+        }
         .onAppear { open() }
         .onChange(of: robot.id) { open() }
     }
@@ -149,6 +176,15 @@ struct WorkspaceScreen: View {
             }
             .keyboardShortcut("0", modifiers: [.command, .option])
             .help("Mostrar u ocultar el panel (⌥⌘0)")
+        }
+
+        ToolbarSpacer(.fixed)
+
+        ToolbarItem(placement: .primaryAction) {
+            SettingsLink {
+                Label("Ajustes", systemImage: IconName.settings.rawValue)
+            }
+            .help("Ajustes: conectar API keys y elegir el modelo (⌘,)")
         }
     }
 }

@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Observation
 
 /// La simulación del robot abierto: carga, estado en vivo y órdenes (de la persona o de la IA).
@@ -16,16 +16,23 @@ final class UseSimulation {
     private(set) var speed = 1.0
     private(set) var activeCamera: String?
     var physics = PhysicsSettings() { didSet { engine.setPhysics(physics) } }
+    var render = RenderOptions() { didSet { engine.setRender(render) } }
+    private(set) var keyframes: [Keyframe] = []
+    /// Aviso corto tras una acción (captura guardada, estado copiado…).
+    private(set) var notice: String?
 
     private var loadedRobotID: String?
+    private var current: (robot: Robot, profile: [String: Any])?
 
     init() {
         engine.onMessage = { [weak self] message in self?.handle(message) }
     }
 
-    func open(_ robot: Robot, profile: [String: Any]) {
-        guard loadedRobotID != robot.id else { return }
+    func open(_ robot: Robot, profile: [String: Any], force: Bool = false) {
+        guard force || loadedRobotID != robot.id else { return }
         loadedRobotID = robot.id
+        current = (robot, profile)
+        keyframes = RobotQueries.keyframes(robotID: robot.id)
         model = nil
         error = nil
         objects = []
@@ -37,6 +44,83 @@ final class UseSimulation {
     // MARK: - Controles
 
     func togglePause() { engine.pause(!state.paused); state.paused.toggle() }
+    /// Vuelve a leer el URDF y su perfil desde el disco (para ver cambios hechos fuera).
+    func reload() { if let c = current { open(c.robot, profile: c.profile, force: true) } }
+    func align() { engine.view("tres") }
+
+    /// Todas las articulaciones al objetivo cero (el «Clear all» de MuJoCo).
+    func clearControls() {
+        for j in model?.joints ?? [] {
+            let zero = j.lower.map { lo in min(j.upper ?? 0, max(lo, 0)) } ?? 0
+            setTarget(j.name, zero)
+        }
+    }
+
+    // MARK: - Keyframes, copiar estado, captura
+
+    func saveKeyframe() async {
+        guard let robot = current?.robot, let json = try? await engine.keyframe() else { return }
+        keyframes.append(Keyframe(name: "Pose \(keyframes.count + 1)", json: json))
+        persistKeyframes(robot)
+        flash("Pose guardada")
+    }
+
+    func loadKeyframe(_ key: Keyframe) { engine.setKeyframe(json: key.json) }
+
+    func deleteKeyframe(_ key: Keyframe) {
+        guard let robot = current?.robot else { return }
+        keyframes.removeAll { $0.id == key.id }
+        persistKeyframes(robot)
+    }
+
+    func copyState() async {
+        guard let json = try? await engine.keyframe() else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(json, forType: .string)
+        flash("Estado copiado")
+    }
+
+    func screenshot() async {
+        guard let robot = current?.robot else { return }
+        do {
+            let png = try await engine.capture(camera: nil, width: 2400, png: true)
+            let url = try RobotQueries.saveScreenshot(png, robotName: robot.name)
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            flash("Captura guardada en Imágenes")
+        } catch {
+            flash(error.localizedDescription)
+        }
+    }
+
+    /// Resumen del modelo en texto («Print model» de MuJoCo).
+    var modelSummary: String {
+        guard let m = model else { return "" }
+        var lines = ["Modelo: \(m.name)", "Piezas: \(m.links.count) · Articulaciones móviles: \(m.joints.count) · Masa: \(String(format: "%.3f", m.mass)) kg", ""]
+        lines.append("Piezas")
+        lines += m.links.map { "  \($0)" }
+        lines.append("")
+        lines.append("Articulaciones (tipo · rango · kp · kd · fuerza máx.)")
+        for j in m.joints {
+            let range = (j.lower != nil && j.upper != nil)
+                ? "\(Units.format(j.lower!, jointType: j.type)) … \(Units.format(j.upper!, jointType: j.type))" : "sin límite"
+            lines.append("  \(j.name) · \(j.type) · \(range) · \(String(format: "%.1f · %.2f · %.1f", j.kp, j.kd, j.fmax))")
+        }
+        if !m.cameras.isEmpty { lines += ["", "Cámaras: " + m.cameras.joined(separator: ", ")] }
+        if !m.warnings.isEmpty { lines += ["", "Avisos"] + m.warnings.map { "  \($0)" } }
+        return lines.joined(separator: "\n")
+    }
+
+    private func persistKeyframes(_ robot: Robot) {
+        try? RobotQueries.saveKeyframes(keyframes, robotID: robot.id)
+    }
+
+    private func flash(_ text: String) {
+        notice = text
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            if notice == text { notice = nil }
+        }
+    }
     func step() { engine.step(10) }
     func reset() { engine.reset() }
     func setSpeed(_ x: Double) { speed = x; engine.setSpeed(x) }
@@ -107,6 +191,8 @@ final class UseSimulation {
             loadingText = nil
             model = Self.parseModel(m)
             objects = model?.objects ?? []
+            engine.setRender(render)
+            engine.setPhysics(physics)
         case "state":
             let next = Self.parseState(m)
             if next != state { state = next }
@@ -124,7 +210,7 @@ final class UseSimulation {
         let objects = (m["objects"] as? [[String: Any]] ?? []).map(parseObject)
         return RobotModel(name: m["name"] as? String ?? "robot", links: m["links"] as? [String] ?? [],
                           joints: joints, cameras: m["cameras"] as? [String] ?? [], objects: objects,
-                          warnings: m["warnings"] as? [String] ?? [])
+                          warnings: m["warnings"] as? [String] ?? [], mass: double(m["mass"]))
     }
 
     private static func parseObject(_ o: [String: Any]) -> SceneObject {
@@ -141,6 +227,10 @@ final class UseSimulation {
         s.paused = m["paused"] as? Bool ?? false
         s.contacts = (m["contacts"] as? NSNumber)?.intValue ?? 0
         s.maxForce = double(m["maxForce"])
+        s.stepMs = double(m["stepMs"])
+        for l in m["links"] as? [[String: Any]] ?? [] {
+            if let name = l["name"] as? String { s.linkForces[name] = double(l["force"]) }
+        }
         s.joints = (m["joints"] as? [[String: Any]] ?? []).map {
             JointState(name: $0["name"] as? String ?? "", q: double($0["q"]), qd: double($0["qd"]),
                        target: double($0["target"]), force: double($0["force"]))
