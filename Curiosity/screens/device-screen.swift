@@ -110,11 +110,9 @@ struct DeviceScreen: View {
         if device.leaderPort != nil { ToolbarItem(placement: .primaryAction) {
             if lerobot.session?.active == true && lerobot.session?.kind == "teleop" {
                 Button { lerobot.stop() } label: { Label("Dejar de mover", systemImage: "stop.fill") }
-                    .labelStyle(.titleAndIcon)
                     .help("Suelta los motores del follower")
             } else {
                 Button { confirm = .teleop } label: { Label("Mover con el leader", systemImage: "hand.raised") }
-                    .labelStyle(.titleAndIcon)
                     .disabled(!device.canTeleoperate || lerobot.isBusy)
                     .help(device.canTeleoperate ? "Este robot copia a su leader. No graba nada." : "Elige la calibración del leader en Ajustes del robot")
             }
