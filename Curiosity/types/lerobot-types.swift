@@ -63,6 +63,26 @@ struct RobotSession: Equatable {
 }
 
 /// Un entrenamiento lanzado desde la app (corre aparte aunque se cierre la app).
+/// Una pieza revisada antes de grabar o probar: follower, leader, poses, cámara o permiso.
+struct PreflightCheck: Identifiable, Equatable {
+    enum State: String { case ok, warn, fail }
+    let key: String
+    let state: State
+    let detail: String
+
+    var id: String { key }
+    var title: String {
+        switch key {
+        case "follower": "Follower"
+        case "leader": "Leader"
+        case "pose": "Poses"
+        case "camera": "Cámara"
+        case "permission": "Permiso de cámara"
+        default: key
+        }
+    }
+}
+
 struct TrainJob: Identifiable, Codable, Equatable {
     var name: String
     var dataset: String       // repo_id (local/… o usuario/…)

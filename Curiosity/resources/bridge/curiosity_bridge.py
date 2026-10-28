@@ -108,6 +108,81 @@ def cmd_snapshot(msg: dict) -> dict:
         cap.release()
 
 
+def cmd_preflight(msg: dict) -> dict:
+    """Revisa cada pieza antes de grabar o probar, sin mover nada (solo lee los motores):
+    follower, leader, que estén en poses parecidas y la cámara. Devuelve una lista de revisiones
+    {key, state: ok · warn · fail, detail} y una foto de la cámara."""
+    from lerobot.robots import make_robot_from_config
+    from lerobot.robots.so_follower import SO101FollowerConfig
+
+    checks, poses, jpeg = [], {}, None
+
+    def arm(key, obj):
+        bus = obj.bus
+        try:
+            bus.connect()
+            if not bus.is_calibrated:
+                checks.append({"key": key, "state": "fail", "detail": "La calibración guardada no coincide con los motores. Calibra de nuevo en la terminal."})
+                return
+            poses[key] = bus.sync_read("Present_Position")
+            checks.append({"key": key, "state": "ok", "detail": "Responden los 6 motores y está calibrado."})
+        except Exception as e:
+            text = clean(e)
+            if "busy" in text.lower() or "resource" in text.lower():
+                detail = "El puerto está ocupado: cierra otros programas que usen el robot."
+            elif "missing" in text.lower() or "found" in text.lower() or "No such file" in text:
+                detail = "No responde. Revisa el cable USB y que la fuente esté encendida."
+            else:
+                detail = text
+            checks.append({"key": key, "state": "fail", "detail": detail})
+        finally:
+            try:
+                bus.disconnect(disable_torque=False)
+            except Exception:
+                pass
+
+    arm("follower", make_robot_from_config(SO101FollowerConfig(port=msg["follower_port"], id=msg["follower_id"])))
+    if msg.get("leader_port"):
+        from lerobot.teleoperators import make_teleoperator_from_config
+        from lerobot.teleoperators.so_leader import SO101LeaderConfig
+
+        arm("leader", make_teleoperator_from_config(SO101LeaderConfig(port=msg["leader_port"], id=msg["leader_id"])))
+        if "follower" in poses and "leader" in poses:
+            diff = max(abs(poses["follower"][j] - poses["leader"][j]) for j in JOINTS if j != "gripper")
+            if diff > 25:
+                checks.append({"key": "pose", "state": "warn",
+                               "detail": f"El leader y el follower están en poses distintas ({diff:.0f}°). Al empezar, el follower saltará a la pose del leader: acércalas."})
+            else:
+                checks.append({"key": "pose", "state": "ok", "detail": "El leader y el follower están en poses parecidas."})
+
+    cam = msg["camera"]
+    try:
+        import cv2
+        from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
+
+        c = OpenCVCamera(OpenCVCameraConfig(index_or_path=int(cam["index"]), width=int(cam["width"]),
+                                            height=int(cam["height"]), fps=int(cam["fps"])))
+        c.connect()
+        try:
+            frame = c.read()
+        finally:
+            c.disconnect()
+        small = cv2.resize(frame[:, :, ::-1], (480, int(480 * frame.shape[0] / frame.shape[1])))
+        ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        jpeg = base64.b64encode(buf.tobytes()).decode()
+        checks.append({"key": "camera", "state": "ok", "detail": f"Entrega imagen a {cam['width']}×{cam['height']}, {cam['fps']} fps."})
+    except Exception as e:
+        text = clean(e)
+        if "fps" in text:
+            detail = f"No da {cam['fps']} fps. Elige otra cámara en Ajustes del robot."
+        elif "open" in text.lower() or "authoriz" in text.lower():
+            detail = "No se pudo abrir: revisa el permiso de cámara de Curiosity y que ningún otro programa la esté usando."
+        else:
+            detail = text
+        checks.append({"key": "camera", "state": "fail", "detail": detail})
+    return {"checks": checks, "jpeg": jpeg}
+
+
 def dataset_info(root: Path) -> dict | None:
     info = root / "meta" / "info.json"
     if not info.exists():
@@ -333,10 +408,8 @@ class Record(Session):
         if (root / "meta" / "info.json").exists():
             done = json.loads((root / "meta" / "info.json").read_text()).get("total_episodes", 0)
             self.msg["resume"] = done > 0
-        elif root.exists():
-            if any(p.suffix in (".parquet", ".mp4") for p in root.rglob("*")):
-                raise ValueError(f"{root} tiene archivos pero no episodios guardados.")
-            shutil.rmtree(root)
+        if done == 0 and root.exists():
+            shutil.rmtree(root)  # un intento anterior que no llegó a guardar ningún episodio
         self.episode = done
         cfg = draccus.parse(lr.RecordConfig, args=self.record_args())
 
@@ -486,7 +559,7 @@ class Rollout(Session):
 # Bucle principal
 # ---------------------------------------------------------------------------------------------
 current: Session | None = None
-QUERIES = {"hello": cmd_hello, "calibrations": cmd_calibrations, "cameras": cmd_cameras, "snapshot": cmd_snapshot,
+QUERIES = {"hello": cmd_hello, "calibrations": cmd_calibrations, "cameras": cmd_cameras, "snapshot": cmd_snapshot, "preflight": cmd_preflight,
            "datasets": cmd_datasets, "push_dataset": cmd_push_dataset, "delete_dataset": cmd_delete_dataset}
 SESSIONS = {"teleop": Teleop, "record": Record, "rollout": Rollout}
 
@@ -532,7 +605,29 @@ def preload():
     from lerobot.scripts import lerobot_record, lerobot_rollout, lerobot_teleoperate  # noqa: F401
 
 
+class _Tee:
+    """Copia stderr a un archivo: lo que LeRobot escribe queda en logs/bridge.log."""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, text):
+        for s in self.streams:
+            s.write(text)
+            s.flush()
+        return len(text)
+
+    def flush(self):
+        for s in self.streams:
+            s.flush()
+
+
 def main():
+    import os
+
+    if os.environ.get("CURIOSITY_LOG"):
+        sys.stderr = _Tee(sys.__stderr__, open(os.environ["CURIOSITY_LOG"], "a", buffering=1))
+        sys.stderr.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
     preload()
     emit({"event": "ready"})
     for line in sys.stdin:

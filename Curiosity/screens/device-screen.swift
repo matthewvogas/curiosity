@@ -16,6 +16,11 @@ struct DeviceScreen: View {
     @State private var showingSettings = false
     @State private var showingHub = false
     @State private var snapshot: Data?
+    // Revisión previa (grabar o probar): cada pieza, sin mover nada.
+    @State private var preflightFor: Action?
+    @State private var checks: [PreflightCheck] = []
+    @State private var checkPicture: Data?
+    @State private var checking = false
 
     var body: some View {
         content
@@ -28,6 +33,22 @@ struct DeviceScreen: View {
             .onChange(of: lerobot.session?.active) { _, active in if active == false { Task { await datasets.load() } } }
             .sheet(isPresented: $showingSettings) { settingsSheet }
             .sheet(isPresented: $showingHub) { hubSheet }
+            .sheet(isPresented: Binding(get: { preflightFor != nil }, set: { if !$0 { preflightFor = nil } })) {
+                PreflightView(
+                    title: preflightFor == .run ? "Antes de probar" : "Antes de grabar",
+                    checks: checks, picture: checkPicture, checking: checking,
+                    warning: preflightFor.map(message) ?? "",
+                    startTitle: preflightFor == .run ? "Probar en el robot" : "Empezar a grabar",
+                    onRetry: { if let a = preflightFor { check(a) } },
+                    onStart: {
+                        let action = preflightFor
+                        preflightFor = nil
+                        Task { await run(action) }
+                    },
+                    onCancel: { preflightFor = nil },
+                    onFix: { preflightFor = nil; showingSettings = true },
+                    onOpenPrivacy: { NSWorkspace.shared.open(PermissionQueries.cameraSettings) })
+            }
             .confirmationDialog(confirmTitle, isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } })) {
                 Button(confirmButton) {
                     let action = confirm   // el diálogo borra `confirm` al cerrarse
@@ -53,7 +74,7 @@ struct DeviceScreen: View {
                           onOpenTask: { tasks.selectedID = $0 },
                           onNewTask: { tasks.composingFor = device.id },
                           onRevealDataset: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: $0.root)]) },
-                          onRunModel: { runJob = $0; confirm = .run })
+                          onRunModel: { runJob = $0; check(.run) })
         }
     }
 
@@ -83,12 +104,12 @@ struct DeviceScreen: View {
             progress: s.progress, hasModel: s.hasModel, eta: eta(task),
             canRecord: device.canRecord, canRun: device.canRunPolicy, busy: lerobot.isBusy, notice: notice)
         let actions = TaskPageActions(
-            onRecord: { confirm = .record },
+            onRecord: { check(.record) },
             onHub: openHub,
             onUseOwn: { tasks.update(task.id) { $0.hubDataset = false; $0.dataset = Naming.slug($0.title) } },
             onTrain: { startTraining(task) },
             onStopTraining: { if let job = s.job { training.stop(job) } },
-            onRun: { runJob = nil; confirm = .run },
+            onRun: { runJob = nil; check(.run) },
             onFixSetup: { showingSettings = true },
             onRemove: { tasks.remove(task.id) })
         return TaskPage(info: info, episodes: bind(task, \.episodes), episodeSeconds: bind(task, \.episodeSeconds),
@@ -159,6 +180,20 @@ struct DeviceScreen: View {
     }
 
     // MARK: - Acciones
+
+    /// Abre la revisión previa y la corre.
+    private func check(_ action: Action) {
+        preflightFor = action
+        checks = []
+        checkPicture = nil
+        checking = true
+        Task {
+            let r = await lerobot.preflight(device, withLeader: action == .record)
+            checks = r.checks
+            checkPicture = r.picture
+            checking = false
+        }
+    }
 
     private func run(_ action: Action?) async {
         // «Probar» desde el resumen: un modelo concreto, aunque no haya una tarea abierta.
@@ -265,13 +300,14 @@ struct DeviceScreen: View {
         }
     }
 
-    private var confirmMessage: String {
-        switch confirm {
+    private var confirmMessage: String { confirm.map(message) ?? "" }
+
+    private func message(_ action: Action) -> String {
+        switch action {
         case .teleop, .record:
             "El follower va a copiar al leader en cuanto se conecte. Pon el leader en una pose parecida a la del follower, con las fuentes encendidas."
         case .run:
             "El robot se va a mover solo. Despeja la mesa y quédate cerca de la fuente; Esc lo detiene."
-        case nil: ""
         }
     }
 

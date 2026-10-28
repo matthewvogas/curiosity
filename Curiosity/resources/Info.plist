@@ -24,6 +24,8 @@
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Curiosity usa la cámara del robot para grabar demostraciones y para que el robot vea mientras hace una tarea.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Rosvelt · Curiosity</string>
 </dict>

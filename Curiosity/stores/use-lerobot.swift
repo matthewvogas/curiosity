@@ -69,6 +69,27 @@ final class UseLeRobot {
         }
     }
 
+    /// Revisa cada pieza sin mover nada: permiso de cámara, follower, leader (si `withLeader`), poses y cámara.
+    func preflight(_ d: Device, withLeader: Bool) async -> (checks: [PreflightCheck], picture: Data?) {
+        if status != .ready { await start() }
+        guard await PermissionQueries.camera() else {
+            return ([PreflightCheck(key: "permission", state: .fail,
+                                    detail: "Curiosity no tiene permiso para usar la cámara. Actívalo en Ajustes del Sistema.")], nil)
+        }
+        var args = base(d).merging(["camera": camera(d)]) { $1 }
+        if withLeader { args.merge(leader(d)) { $1 } }
+        do {
+            let r = try await bridge.request("preflight", args)
+            let checks = (r["checks"] as? [[String: Any]] ?? []).compactMap { c -> PreflightCheck? in
+                guard let key = c["key"] as? String, let state = (c["state"] as? String).flatMap(PreflightCheck.State.init) else { return nil }
+                return PreflightCheck(key: key, state: state, detail: c["detail"] as? String ?? "")
+            }
+            return (checks, (r["jpeg"] as? String).flatMap { Data(base64Encoded: $0) })
+        } catch {
+            return ([PreflightCheck(key: "bridge", state: .fail, detail: LeRobotErrors.friendly(error.localizedDescription))], nil)
+        }
+    }
+
     /// Una foto de la cámara, para elegir la correcta (no usa el robot).
     func snapshot(_ index: Int) async -> Data? {
         do {
@@ -153,5 +174,7 @@ final class UseLeRobot {
         s.elapsed = (e["elapsed"] as? NSNumber)?.doubleValue ?? 0
         s.limit = (e["limit"] as? NSNumber)?.doubleValue ?? 0
         if s != session { session = s }
+        // Si terminó por un error, que se vea y diga qué hacer.
+        if !s.active, let raw = s.error { error = LeRobotErrors.friendly(raw) }
     }
 }

@@ -41,6 +41,7 @@ targets:
         LSApplicationCategoryType: public.app-category.developer-tools
         LSMinimumSystemVersion: "26.0"
         NSHumanReadableCopyright: "Rosvelt · Curiosity"
+        NSCameraUsageDescription: "Curiosity usa la cámara del robot para grabar demostraciones y para que el robot vea mientras hace una tarea."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rosvelt.curiosity.studio

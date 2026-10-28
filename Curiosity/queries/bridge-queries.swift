@@ -41,6 +41,7 @@ final class BridgeQueries {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
         env["PYTHONUNBUFFERED"] = "1"
+        env["CURIOSITY_LOG"] = AppPaths.logs.appendingPathComponent("bridge.log").path
         if let hubToken, !hubToken.isEmpty { env["HF_TOKEN"] = hubToken }
         p.environment = env
 
