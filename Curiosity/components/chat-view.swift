@@ -204,6 +204,8 @@ private struct ThinkingRow: View {
 }
 
 /// Campo para escribir: relleno sutil (no vidrio, porque ya está sobre el panel de vidrio).
+/// El campo para escribirle al robot, como el de Mensajes en macOS 26: cristal, texto que crece y el botón
+/// de enviar del sistema.
 private struct ChatComposer: View {
     @Binding var draft: String
     let isRunning: Bool
@@ -211,33 +213,37 @@ private struct ChatComposer: View {
     let robotName: String
     let onSend: () -> Void
     let onStop: () -> Void
+    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(alignment: .bottom, spacing: Theme.Space.s) {
-            TextField(enabled ? "Pídele algo a \(robotName)…" : "Conecta tu API key para empezar",
-                      text: $draft, axis: .vertical)
+            TextField("Mensaje", text: $draft,
+                      prompt: Text(enabled ? "Pídele algo a \(robotName)" : "Conecta tu API key para empezar"),
+                      axis: .vertical)
                 .textFieldStyle(.plain)
+                .font(.body)
                 .lineLimit(1...6)
-                .padding(.vertical, 8)
-                .padding(.leading, 4)
+                .focused($focused)
+                .padding(.vertical, 7)
                 .disabled(!enabled)
                 .onSubmit { if !isRunning { onSend() } }
             Button(action: isRunning ? onStop : onSend) {
-                Icon(name: isRunning ? .stop : .send, size: 13, weight: .bold)
-                    .frame(width: 30, height: 30)
-                    .foregroundStyle(canSend || isRunning ? Color(nsColor: .windowBackgroundColor) : Theme.faint)
-                    .background(canSend || isRunning ? Theme.ink : Theme.fill, in: .circle)
+                Image(systemName: isRunning ? "stop.fill" : "arrow.up")
+                    .font(.system(size: 12, weight: .bold))
+                    .frame(width: 14, height: 14)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.circle)
             .disabled(!isRunning && !canSend)
             .keyboardShortcut(isRunning ? .cancelAction : .defaultAction)
             .help(isRunning ? "Detener" : "Enviar")
         }
         .padding(.leading, Theme.Space.m)
-        .padding(.trailing, 6)
-        .padding(.vertical, 6)
-        .background(Theme.fill, in: .rect(cornerRadius: Theme.Radius.panel - Theme.Space.m))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel - Theme.Space.m).strokeBorder(Theme.hairline))
+        .padding(.trailing, 5)
+        .padding(.vertical, 4)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+        .contentShape(.rect)
+        .onTapGesture { focused = true }
     }
 
     private var canSend: Bool { enabled && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
