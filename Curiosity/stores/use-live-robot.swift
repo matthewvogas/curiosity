@@ -30,10 +30,9 @@ final class UseLiveRobot {
     /// Las cámaras en vivo, con su nombre: la principal primero.
     var cameras: [(key: String, name: String, frame: Data?)] {
         guard isLive, let device else { return [] }
-        let names = Dictionary(lerobot.cameras.map { ($0.index, $0.name) }, uniquingKeysWith: { a, _ in a })
         var out = [("front", device.cameraName ?? "Principal", lerobot.frames["front"])]
-        for (i, index) in device.extras.enumerated() {
-            out.append(("cam\(i + 1)", names[index] ?? "Cámara \(i + 2)", lerobot.frames["cam\(i + 1)"]))
+        for (i, extra) in lerobot.extraCameras(device).enumerated() {
+            out.append(("cam\(i + 1)", extra.name, lerobot.frames["cam\(i + 1)"]))
         }
         return out
     }
@@ -86,7 +85,9 @@ final class UseLiveRobot {
     }
 
     /// Cambia las cámaras extra sin desconectar el robot.
-    func setExtraCameras(_ indexes: [Int]) {
+    func setExtraCameras(_ device: Device) {
+        self.device = device
+        let indexes = lerobot.extraCameras(device).map(\.index)
         Task { try? await lerobot.liveCameras(indexes) }
     }
 

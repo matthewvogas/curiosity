@@ -185,7 +185,7 @@ def cmd_preflight(msg: dict) -> dict:
         try:
             from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
 
-            c = OpenCVCamera(OpenCVCameraConfig(index_or_path=int(index)))
+            c = OpenCVCamera(native_camera_config(index))
             c.connect()
             try:
                 frame = c.read()
@@ -484,6 +484,29 @@ class Record(Session):
                 "elapsed": round(time.monotonic() - self.phase_t0, 1), "limit": self.phase_limit}
 
 
+def native_camera_config(index):
+    """Una cámara extra con la resolución y fps que ella misma ofrece (cada cámara y cada Mac son distintas).
+    LeRobot exige fijarlos, así que se leen primero. Muy grandes se bajan a 1280 de ancho."""
+    import cv2
+    from lerobot.cameras.opencv import OpenCVCameraConfig
+
+    cap = cv2.VideoCapture(int(index))
+    try:
+        if not cap.isOpened():
+            raise ValueError(f"No se pudo abrir la cámara {index}.")
+        w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(round(cap.get(cv2.CAP_PROP_FPS) or 30))
+        if w > 1280:
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, round(1280 * h / w))
+            w2, h2 = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if w2 == 1280:
+                w, h = w2, h2
+    finally:
+        cap.release()
+    return OpenCVCameraConfig(index_or_path=int(index), width=w, height=h, fps=fps)
+
+
 def camera_configs(msg):
     """La cámara principal («front», con su resolución fija) y las demás («cam1»…, como vengan)."""
     from lerobot.cameras.opencv import OpenCVCameraConfig
@@ -492,7 +515,7 @@ def camera_configs(msg):
     out = {"front": OpenCVCameraConfig(index_or_path=int(cam["index"]), width=int(cam["width"]),
                                        height=int(cam["height"]), fps=int(cam["fps"]))}
     for i, index in enumerate(msg.get("extra_cameras") or [], start=1):
-        out[f"cam{i}"] = OpenCVCameraConfig(index_or_path=int(index))
+        out[f"cam{i}"] = native_camera_config(index)
     return out
 
 
@@ -585,8 +608,8 @@ class Live(Session):
                 pass
             del robot.cameras[key]
         for i, index in enumerate(indexes, start=1):
-            cam = OpenCVCamera(OpenCVCameraConfig(index_or_path=index))
             try:
+                cam = OpenCVCamera(native_camera_config(index))
                 cam.connect()
                 robot.cameras[f"cam{i}"] = cam
             except Exception as e:

@@ -12,7 +12,7 @@ struct RobotSetupView: View {
     @Binding var leaderPort: String?
     @Binding var leaderID: String?
     @Binding var cameraIndex: Int?
-    @Binding var extraCameras: [Int]
+    @Binding var extraCameras: [String]
     let snapshot: Data?
     let onSnapshot: () -> Void
 
@@ -48,8 +48,8 @@ struct RobotSetupView: View {
                     VStack(alignment: .trailing, spacing: 4) {
                         ForEach(others) { c in
                             Toggle(c.name, isOn: Binding(
-                                get: { extraCameras.contains(c.index) },
-                                set: { on in extraCameras = on ? extraCameras + [c.index] : extraCameras.filter { $0 != c.index } }))
+                                get: { extraCameras.contains(c.name) },
+                                set: { on in extraCameras = on ? extraCameras + [c.name] : extraCameras.filter { $0 != c.name } }))
                         }
                     }
                 }

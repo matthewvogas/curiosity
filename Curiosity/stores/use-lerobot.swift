@@ -77,6 +77,7 @@ final class UseLeRobot {
 
     /// Revisa cada pieza sin mover nada: permiso de cámara, follower, leader (si `withLeader`), poses y cámara.
     func preflight(_ d: Device, withLeader: Bool, withExtras: Bool = false) async -> (checks: [PreflightCheck], picture: Data?) {
+        refreshCameras()
         if status != .ready { await start() }
         guard await PermissionQueries.camera() else {
             return ([PreflightCheck(key: "permission", state: .fail,
@@ -84,7 +85,7 @@ final class UseLeRobot {
         }
         var args = base(d).merging(["camera": camera(d)]) { $1 }
         if withLeader { args.merge(leader(d)) { $1 } }
-        if withExtras { args["extra_cameras"] = d.extras }
+        if withExtras { args["extra_cameras"] = extraCameras(d).map(\.index) }
         do {
             let r = try await bridge.request("preflight", args)
             let checks = (r["checks"] as? [[String: Any]] ?? []).compactMap { c -> PreflightCheck? in
@@ -127,6 +128,7 @@ final class UseLeRobot {
 
     /// Graba demostraciones con el leader en un dataset de la app.
     func record(_ d: Device, dataset: String, task: String, episodes: Int, episodeSeconds: Double, resetSeconds: Double) async {
+        refreshCameras()
         let root = AppPaths.datasets.appendingPathComponent(dataset).path
         await startSession("record", base(d).merging(leader(d)) { $1 }.merging([
             "camera": camera(d), "repo_id": "local/\(dataset)", "root": root, "task": task,
@@ -136,6 +138,7 @@ final class UseLeRobot {
 
     /// El robot usa un modelo entrenado durante `seconds`.
     func runPolicy(_ d: Device, modelPath: String, task: String, seconds: Double) async {
+        refreshCameras()
         await startSession("rollout", base(d).merging([
             "camera": camera(d), "policy_path": modelPath, "task": task, "duration": seconds, "max_relative_target": 10,
         ]) { $1 })
@@ -143,7 +146,8 @@ final class UseLeRobot {
 
     /// En vivo: el follower se queda firme y va a los objetivos que se le manden (sin leader).
     func live(_ d: Device) async {
-        await startSession("live", base(d).merging(["camera": camera(d), "extra_cameras": d.extras]) { $1 })
+        refreshCameras()
+        await startSession("live", base(d).merging(["camera": camera(d), "extra_cameras": extraCameras(d).map(\.index)]) { $1 })
     }
 
     func liveTargets(_ targets: [String: Double]) async throws { _ = try await bridge.request("live_targets", ["targets": targets]) }
@@ -171,7 +175,20 @@ final class UseLeRobot {
 
     private func base(_ d: Device) -> [String: Any] { ["follower_port": d.id, "follower_id": d.followerID ?? ""] }
     private func leader(_ d: Device) -> [String: Any] { ["leader_port": d.leaderPort ?? "", "leader_id": d.leaderID ?? ""] }
-    private func camera(_ d: Device) -> [String: Any] { ["index": d.cameraIndex ?? 0, "width": 640, "height": 480, "fps": 30] }
+    private func camera(_ d: Device) -> [String: Any] { ["index": mainCamera(d) ?? 0, "width": 640, "height": 480, "fps": 30] }
+
+    /// El número actual de la cámara principal. Se busca por nombre: macOS renumera las cámaras al enchufar otra.
+    func mainCamera(_ d: Device) -> Int? {
+        cameras.first { $0.name == d.cameraName }?.index ?? d.cameraIndex
+    }
+
+    /// Las cámaras extra enchufadas ahora, con su número actual (sin repetir la principal).
+    func extraCameras(_ d: Device) -> [(name: String, index: Int)] {
+        let main = mainCamera(d)
+        return d.extraNames.compactMap { name in
+            cameras.first { $0.name == name && $0.index != main }.map { (name, $0.index) }
+        }
+    }
 
     private func startSession(_ kind: String, _ args: [String: Any]) async {
         error = nil

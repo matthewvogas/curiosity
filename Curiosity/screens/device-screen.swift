@@ -192,10 +192,16 @@ struct DeviceScreen: View {
                     followers: lerobot.calibrations.followers, leaders: lerobot.calibrations.leaders,
                     otherPorts: devices.connectedPorts.filter { $0 != device.id }, cameras: lerobot.cameras,
                     followerID: bindDevice(\.followerID), leaderPort: bindDevice(\.leaderPort), leaderID: bindDevice(\.leaderID),
-                    cameraIndex: bindDevice(\.cameraIndex),
-                    extraCameras: Binding(get: { device.extras }, set: { v in devices.update(device.id) { $0.extraCameras = v } }),
+                    cameraIndex: Binding(get: { lerobot.mainCamera(device) }, set: { i in
+                        devices.update(device.id) { d in
+                            d.cameraIndex = i
+                            d.cameraName = lerobot.cameras.first { $0.index == i }?.name
+                            d.extraCameraNames = d.extraNames.filter { $0 != d.cameraName }
+                        }
+                    }),
+                    extraCameras: Binding(get: { device.extraNames }, set: { v in devices.update(device.id) { $0.extraCameraNames = v } }),
                     snapshot: snapshot,
-                    onSnapshot: { Task { if let i = device.cameraIndex { snapshot = await lerobot.snapshot(i) } } })
+                    onSnapshot: { Task { if let i = lerobot.mainCamera(device) { snapshot = await lerobot.snapshot(i) } } })
             }
             .formStyle(.grouped)
             HStack { Spacer(); Button("Listo") { showingSettings = false }.keyboardShortcut(.defaultAction) }
@@ -274,6 +280,8 @@ struct DeviceScreen: View {
         devices.update(device.id) { d in
             if d.followerID == nil, lerobot.calibrations.followers.count == 1 { d.followerID = lerobot.calibrations.followers[0] }
             if d.leaderID == nil, d.leaderPort != nil, lerobot.calibrations.leaders.count == 1 { d.leaderID = lerobot.calibrations.leaders[0] }
+            // La cámara se recuerda por nombre (los números cambian al enchufar otra).
+            if d.cameraName == nil, let i = d.cameraIndex { d.cameraName = lerobot.cameras.first { $0.index == i }?.name }
             if d.cameraIndex == nil {
                 let external = lerobot.cameras.first { !$0.name.contains("MacBook") && !$0.name.contains("iPhone") }
                 d.cameraIndex = (external ?? lerobot.cameras.first)?.index

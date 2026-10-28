@@ -36,10 +36,10 @@ struct DeviceLiveScreen: View {
                     Menu {
                         Section("Cámaras en vivo") {
                             ForEach(lerobot.cameras) { c in
-                                if c.index == device.cameraIndex {
+                                if c.index == lerobot.mainCamera(device) {
                                     Text("\(c.name) · principal")
                                 } else {
-                                    Toggle(c.name, isOn: extraBinding(c.index))
+                                    Toggle(c.name, isOn: extraBinding(c.name))
                                 }
                             }
                         }
@@ -118,11 +118,12 @@ struct DeviceLiveScreen: View {
     }
 
     /// Activar o quitar una cámara extra; si ya está en vivo, se aplica sin desconectar.
-    private func extraBinding(_ index: Int) -> Binding<Bool> {
-        Binding(get: { device.extras.contains(index) }, set: { on in
-            let next = on ? device.extras + [index] : device.extras.filter { $0 != index }
-            devices.update(device.id) { $0.extraCameras = next }
-            if live.isLive { live.setExtraCameras(next) }
+    private func extraBinding(_ name: String) -> Binding<Bool> {
+        Binding(get: { device.extraNames.contains(name) }, set: { on in
+            var updated = device
+            updated.extraCameraNames = on ? device.extraNames + [name] : device.extraNames.filter { $0 != name }
+            devices.update(device.id) { $0.extraCameraNames = updated.extraCameraNames }
+            if live.isLive { live.setExtraCameras(updated) }
         })
     }
 
@@ -131,10 +132,10 @@ struct DeviceLiveScreen: View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
             Text("Cámaras").font(.headline)
             ForEach(lerobot.cameras) { c in
-                if c.index == device.cameraIndex {
+                if c.index == lerobot.mainCamera(device) {
                     Label("\(c.name) · principal", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.muted)
                 } else {
-                    Toggle(c.name, isOn: extraBinding(c.index))
+                    Toggle(c.name, isOn: extraBinding(c.name))
                 }
             }
             Text("¿No aparece una? Conéctala por USB en modo webcam; sale aquí sola.")

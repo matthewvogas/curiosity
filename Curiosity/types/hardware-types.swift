@@ -90,10 +90,11 @@ struct Device: Identifiable, Codable, Equatable {
     /// La cámara para grabar y para los modelos (índice de OpenCV) y su nombre, para reconocerla.
     var cameraIndex: Int?
     var cameraName: String?
-    /// Otras cámaras (índices de OpenCV) que se ven en vivo y que la IA puede mirar, p. ej. una vista desde arriba.
-    var extraCameras: [Int]?
+    /// Otras cámaras (por nombre: los números cambian al enchufar otra) que se ven en vivo y que la IA puede
+    /// mirar, p. ej. una vista desde arriba.
+    var extraCameraNames: [String]?
 
-    var extras: [Int] { extraCameras ?? [] }
+    var extraNames: [String] { extraCameraNames ?? [] }
 
     var canTeleoperate: Bool { followerID != nil && leaderPort != nil && leaderID != nil }
     var canRecord: Bool { canTeleoperate && cameraIndex != nil }
