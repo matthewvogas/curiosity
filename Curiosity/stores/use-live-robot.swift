@@ -14,6 +14,8 @@ final class UseLiveRobot {
     /// El SO-101 del simulador, quieto, puesto en la misma pose que el real.
     let twin = SimulationQueries()
     private var twinLoaded = false
+    /// Los últimos movimientos (antes, después y cuánto cambió), para que la IA entienda cómo responde.
+    private var moves: [[String: Any]] = []
 
     init(lerobot: UseLeRobot) {
         self.lerobot = lerobot
@@ -66,6 +68,7 @@ final class UseLiveRobot {
 
     func start(_ device: Device) async {
         self.device = device
+        moves = []
         await lerobot.live(device)
     }
     func stop() { lerobot.stop() }
@@ -92,6 +95,19 @@ final class UseLiveRobot {
     }
 
     func home() { Task { try? await lerobot.liveHome() } }
+
+    /// El estado para la IA: articulaciones y dónde quedó la pinza (cinemática directa del modelo 3D).
+    private func pose() async -> [String: Any] {
+        var out = RealAgentTools.describe(joints: joints, targets: targets, limits: limits)
+        if twinLoaded {
+            try? await Task.sleep(for: .milliseconds(150))  // que el gemelo alcance la última pose
+        }
+        if twinLoaded, let fresh = try? await twin.linkPositions() {
+            if let g = fresh["gripper_frame_link"] ?? fresh["gripper_link"] { out["gripper_cm"] = g.map { ($0 * 1000).rounded() / 10 } }
+            if let w = fresh["wrist_link"] { out["wrist_cm"] = w.map { ($0 * 1000).rounded() / 10 } }
+        }
+        return out
+    }
 
     /// Espera a que el robot llegue a sus objetivos (o se acabe el tiempo).
     private func settle(timeout: Double) async {
@@ -123,7 +139,9 @@ extension UseLiveRobot: ChatBody {
         guard isReady else { throw NSError(domain: "Curiosity", code: 9, userInfo: [NSLocalizedDescriptionKey: "El robot ya no está en vivo."]) }
         switch name {
         case "get_state":
-            return .text(AgentTools.json(RealAgentTools.describe(joints: joints, targets: targets, limits: limits)))
+            var out = await pose()
+            if !moves.isEmpty { out["previous_moves"] = Array(moves.suffix(3)) }
+            return .text(AgentTools.json(out))
 
         case "move_joints":
             var batch: [String: Double] = [:], clipped: [String] = []
@@ -135,20 +153,32 @@ extension UseLiveRobot: ChatBody {
                 batch[j] = value
                 longest = max(longest, abs(value - (joints[j] ?? value)))
             }
+            let before = await pose()
+            let start = joints
             try await lerobot.liveTargets(batch)
             await settle(timeout: longest / 40 + 2)
-            var out = RealAgentTools.describe(joints: joints, targets: targets, limits: limits)
+            let after = await pose()
+            let end = joints
+            let move = RealAgentTools.move(asked: batch, start: start, end: end, before: before["gripper_cm"], after: after["gripper_cm"])
+            var out: [String: Any] = ["move": move, "now": after]
+            if !moves.isEmpty { out["previous_moves"] = Array(moves.suffix(3)) }
+            moves = Array((moves + [move]).suffix(5))
             if !clipped.isEmpty { out["clipped_to_limits"] = clipped }
             return .text(AgentTools.json(out), problem: clipped.isEmpty ? nil : "Ajustado al rango: \(clipped.joined(separator: ", "))")
 
         case "look":
             let photos = try await lerobot.liveLook()
-            return .images(photos.map { (photos.count > 1 ? label($0.camera) : "", $0.jpeg) })
+            var images = photos.map { (label: label($0.camera), jpeg: $0.jpeg) }
+            // El modelo 3D en la misma pose: muestra la forma del brazo aunque las cámaras no lo vean entero.
+            if twinLoaded, let model = try? await twin.capture(camera: nil) {
+                images.append(("Modelo 3D (réplica en la pose actual del robot)", model))
+            }
+            return .images(images)
 
         case "go_home":
             try await lerobot.liveHome()
             await settle(timeout: 8)
-            return .text(AgentTools.json(RealAgentTools.describe(joints: joints, targets: targets, limits: limits)))
+            return .text(AgentTools.json(await pose()))
 
         default:
             return .text("Herramienta desconocida: \(name)", problem: "Herramienta desconocida")

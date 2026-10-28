@@ -62,6 +62,11 @@ final class SimulationQueries: NSObject, WKScriptMessageHandler {
         let value = try await evaluate("return JSON.stringify(studio.getKeyframe())", [:])
         return value as? String ?? "{}"
     }
+    /// Posición de cada pieza en metros, en el marco de la base del robot.
+    func linkPositions() async throws -> [String: [Double]] {
+        let value = try await evaluate("return studio.linkPositions()", [:])
+        return (value as? [String: [NSNumber]])?.mapValues { $0.map(\.doubleValue) } ?? [:]
+    }
     func pause(_ on: Bool) { send("studio.pause", on) }
     func step(_ n: Int = 1) { send("studio.step", n) }
     func reset() { send("studio.reset", true) }

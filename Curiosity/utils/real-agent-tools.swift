@@ -54,6 +54,11 @@ enum RealAgentTools {
         - Cada movimiento lo aprueba la persona antes de que ocurra: explica en una frase qué vas a hacer y por qué.
         - Mueve en pasos chicos (pocas articulaciones y pocos grados a la vez) y mira (look) para comprobar.
         - Antes del primer movimiento, lee el estado (get_state) y mira la escena.
+        - El estado trae dónde está la pinza (gripper_cm) y la muñeca (wrist_cm) en centímetros, en el marco \
+        de la base del robot (z hacia arriba), calculado con su modelo 3D. Cada movimiento te devuelve el \
+        antes, el después, cuánto cambió cada articulación, si llegó y cuánto se desplazó la pinza; también \
+        los movimientos anteriores. Úsalo para aprender en qué sentido mueve cada articulación y corregir.
+        - Al mirar, además de las cámaras recibes una imagen del modelo 3D en la pose actual del robot.
         - Nunca intentes salirte del rango. Si algo parece raro o peligroso, detente y pregunta.
         - No sabes de antemano en qué sentido abre la pinza: pruébalo con un cambio chico y mira.
         - Responde en el idioma de la persona, breve y sin tecnicismos innecesarios.
@@ -68,6 +73,24 @@ enum RealAgentTools {
             if let l = limits[j] { out["limits"] = [round1(l.lowerBound), round1(l.upperBound)] }
             return out
         }]
+    }
+
+    /// Un movimiento resumido: lo pedido, dónde estaba, dónde quedó, cuánto cambió cada articulación,
+    /// si llegó, y cuánto se desplazó la pinza en el espacio.
+    static func move(asked: [String: Double], start: [String: Double], end: [String: Double], before: Any?, after: Any?) -> [String: Any] {
+        var out: [String: Any] = [
+            "asked": asked.mapValues(round1),
+            "before": start.filter { asked[$0.key] != nil }.mapValues(round1),
+            "after": end.filter { asked[$0.key] != nil }.mapValues(round1),
+            "change": asked.keys.reduce(into: [String: Double]()) { $0[$1] = round1((end[$1] ?? 0) - (start[$1] ?? 0)) },
+            "reached": asked.keys.reduce(into: [String: Bool]()) { $0[$1] = abs((end[$1] ?? 0) - asked[$1]!) < 3 },
+        ]
+        if let b = before as? [Double], let a = after as? [Double], b.count == 3, a.count == 3 {
+            out["gripper_before_cm"] = b
+            out["gripper_after_cm"] = a
+            out["gripper_moved_cm"] = zip(a, b).map { round1($0 - $1) }
+        }
+        return out
     }
 
     /// Lo que se le muestra a la persona para aprobar: el comando exacto.

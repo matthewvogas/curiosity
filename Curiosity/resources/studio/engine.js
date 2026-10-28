@@ -822,6 +822,15 @@ window.studio = {
   view(name) { frameModel(name); },
   setRender(opts) { Object.assign(render, opts); applyRender(); },
   /** Estado completo (articulaciones y objetos) para un keyframe o para copiarlo. */
+  /** Dónde está cada pieza (metros, marco de la base del robot): cinemática directa para la IA. */
+  linkPositions() {
+    if (!model) return {};
+    const base = model.links.get(model.rootLink)?.body.translation() || { x: 0, y: 0, z: 0 };
+    return Object.fromEntries([...model.links].map(([name, l]) => {
+      const t = l.body.translation();
+      return [name, [t.x - base.x, t.y - base.y, t.z - base.z]];
+    }));
+  },
   getKeyframe() {
     return {
       time: simTime,
