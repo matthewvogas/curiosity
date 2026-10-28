@@ -39,7 +39,7 @@ enum RealAgentTools {
 
     static func systemPrompt(robotName: String, limits: [String: ClosedRange<Double>]) -> String {
         let ranges = joints.compactMap { j in
-            limits[j].map { "- \(j): \(format($0.lowerBound, j)) a \(format($0.upperBound, j))" }
+            limits[j].map { "- \(j): de \(format($0.lowerBound, j)) a \(format($0.upperBound, j)) (recorrido total \(format($0.upperBound - $0.lowerBound, j)))" }
         }.joined(separator: "\n")
         return """
         Eres el asistente de Curiosity y controlas un brazo robótico REAL, un SO-101 llamado \(robotName), \
@@ -47,7 +47,9 @@ enum RealAgentTools {
         tú las conviertes en movimientos. Si hay más de una cámara (por ejemplo una vista desde arriba), \
         «look» te da una foto de cada una con su nombre: combínalas para ubicar las cosas.
 
-        Articulaciones (grados; la pinza de 0 a 100) y su rango permitido:
+        Articulaciones (grados; la pinza de 0 a 100) y su rango permitido. Sale de la calibración de este \
+        robot (lo máximo que se movió cada motor al calibrarlo, con 3° de margen), así que es su libertad real; \
+        el 0° de cada una es el centro de ese recorrido:
         \(ranges)
 
         Reglas, porque es un robot de verdad:
@@ -59,7 +61,9 @@ enum RealAgentTools {
         antes, el después, cuánto cambió cada articulación, si llegó y cuánto se desplazó la pinza; también \
         los movimientos anteriores. Úsalo para aprender en qué sentido mueve cada articulación y corregir.
         - Al mirar, además de las cámaras recibes una imagen del modelo 3D en la pose actual del robot.
-        - Nunca intentes salirte del rango. Si algo parece raro o peligroso, detente y pregunta.
+        - Nunca intentes salirte del rango: el estado te dice cuánto le queda hacia cada lado (room_to_min, \
+        room_to_max) y en qué parte del recorrido está (percent_of_range). Si algo parece raro o peligroso, \
+        detente y pregunta.
         - No sabes de antemano en qué sentido abre la pinza: pruébalo con un cambio chico y mira.
         - Responde en el idioma de la persona, breve y sin tecnicismos innecesarios.
         """
@@ -70,7 +74,15 @@ enum RealAgentTools {
         ["joints": joints.map { j -> [String: Any] in
             var out: [String: Any] = ["joint": j, "position": round1(current[j] ?? 0), "target": round1(targets[j] ?? 0),
                                       "unit": j == "gripper" ? "0-100" : "°"]
-            if let l = limits[j] { out["limits"] = [round1(l.lowerBound), round1(l.upperBound)] }
+            if let l = limits[j] {
+                let q = current[j] ?? 0, span = l.upperBound - l.lowerBound
+                out["min"] = round1(l.lowerBound)
+                out["max"] = round1(l.upperBound)
+                // Cuánta libertad le queda hacia cada lado y en qué parte de su recorrido está (0 % = mínimo).
+                out["room_to_min"] = round1(q - l.lowerBound)
+                out["room_to_max"] = round1(l.upperBound - q)
+                out["percent_of_range"] = span > 0 ? Int(((q - l.lowerBound) / span * 100).rounded()) : 0
+            }
             return out
         }]
     }
