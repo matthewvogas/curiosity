@@ -170,7 +170,7 @@ struct DeviceScreen: View {
                     .labelStyle(.titleAndIcon)
                     .help("Suelta los motores del follower")
             } else {
-                Button { confirm = .teleop } label: { Label("Mover con el leader", systemImage: "arrow.trianglehead.2.clockwise.rotate.90") }
+                Button { confirm = .teleop } label: { Label("Mover con el leader", systemImage: "arrow.left.arrow.right") }
                     .labelStyle(.titleAndIcon)
                     .disabled(!device.canTeleoperate || lerobot.isBusy)
                     .help(device.canTeleoperate ? "El follower copia al leader. No graba nada." : "Configura el leader en Ajustes del robot")
