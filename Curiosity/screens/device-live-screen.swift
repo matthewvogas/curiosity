@@ -16,9 +16,12 @@ struct DeviceLiveScreen: View {
     @Environment(UseLeRobot.self) private var lerobot
     @Environment(UseDevices.self) private var devices
     @Environment(\.liveChat) private var chat
+    @Environment(UseKnowledge.self) private var knowledge
+    @Environment(UseDatasets.self) private var datasets
+    @State private var showingHub = false
     @Environment(\.openSettings) private var openSettings
 
-    enum PanelTab: String, Hashable { case chat, control }
+    enum PanelTab: String, Hashable { case chat, control, knowledge }
     @AppStorage("live.tab") private var tab: PanelTab = .chat
     @State private var focused = 0
 
@@ -59,6 +62,14 @@ struct DeviceLiveScreen: View {
             }
         }
         .onChange(of: device) { live.update(device) }
+        .sheet(isPresented: $showingHub) {
+            @Bindable var datasets = datasets
+            HubPickerView(results: datasets.hub, query: $datasets.query, searching: datasets.searching,
+                          onSearch: { Task { await datasets.search() } },
+                          onPick: { d in showingHub = false; study(d.id, root: nil) },
+                          onClose: { showingHub = false },
+                          detail: "Demostraciones de un SO-100/101. La IA estudia unas cuantas (se bajan solo esas) y escribe cómo se hace la tarea.")
+        }
         .task(id: device.id) {
             let key = "device-" + device.id
             if chat?.robotID != key { chat?.reset(robotName: robotName, robotID: key) }
@@ -117,6 +128,10 @@ struct DeviceLiveScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private func study(_ repoID: String, root: String?) {
+        Task { await knowledge.study(repoID: repoID, root: root, followerID: device.followerID) }
+    }
+
     /// Activar o quitar una cámara extra; si ya está en vivo, se aplica sin desconectar.
     private func extraBinding(_ name: String) -> Binding<Bool> {
         Binding(get: { device.extraNames.contains(name) }, set: { on in
@@ -154,7 +169,7 @@ struct DeviceLiveScreen: View {
                 .padding(.trailing, Theme.chatWidth + Theme.Space.m)
         }
         .overlay(alignment: .trailing) {
-            FloatingPanel(tabs: [(.chat, "Chat"), (.control, "Control")], selection: $tab) {
+            FloatingPanel(tabs: [(.chat, "Chat"), (.control, "Control"), (.knowledge, "Saber")], selection: $tab) {
                 switch tab {
                 case .chat:
                     if let chat {
@@ -171,6 +186,14 @@ struct DeviceLiveScreen: View {
                     LiveControls(joints: RealAgentTools.joints, positions: live.joints, targets: live.targets,
                                  limits: live.limits, onChange: live.setTarget, onHome: live.home)
                         .disabled(!live.isReady)
+                case .knowledge:
+                    KnowledgePanel(packages: knowledge.packages, activeID: knowledge.activeID, studying: knowledge.studying,
+                                   error: knowledge.error, localDatasets: datasets.local.filter { $0.source == "local" },
+                                   onStudy: { d in study(d.repoID, root: d.root) },
+                                   onSearchHub: { showingHub = true; Task { if datasets.hub.isEmpty { await datasets.search() } } },
+                                   onActivate: { knowledge.activeID = $0 },
+                                   onRemove: knowledge.remove)
+                        .task { await datasets.load() }
                 }
             }
             .frame(width: Theme.chatWidth)

@@ -152,6 +152,10 @@ final class UseLeRobot {
 
     func liveTargets(_ targets: [String: Double]) async throws { _ = try await bridge.request("live_targets", ["targets": targets]) }
     func liveCameras(_ indexes: [Int]) async throws { _ = try await bridge.request("live_cameras", ["extra_cameras": indexes]) }
+    /// Reproduce una trayectoria ([[t, articulaciones…]] en grados) a `speed` de su velocidad.
+    func liveTrajectory(_ points: [[Double]], speed: Double) async throws {
+        _ = try await bridge.request("live_trajectory", ["points": points, "speed": speed])
+    }
     func liveHome() async throws { _ = try await bridge.request("live_home") }
 
     /// Una foto grande de cada cámara mientras está en vivo (para la IA): [(cámara, JPEG)].
@@ -224,6 +228,7 @@ final class UseLeRobot {
         s.elapsed = (e["elapsed"] as? NSNumber)?.doubleValue ?? 0
         s.limit = (e["limit"] as? NSNumber)?.doubleValue ?? 0
         s.targets = (e["targets"] as? [String: NSNumber])?.mapValues(\.doubleValue) ?? [:]
+        s.playing = e["playing"] as? Bool ?? false
         s.limits = (e["limits"] as? [String: [NSNumber]] ?? [:]).compactMapValues { v in
             v.count == 2 && v[0].doubleValue <= v[1].doubleValue ? v[0].doubleValue...v[1].doubleValue : nil
         }

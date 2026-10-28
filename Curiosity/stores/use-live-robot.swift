@@ -7,6 +7,7 @@ import Observation
 @Observable
 final class UseLiveRobot {
     private let lerobot: UseLeRobot
+    private let knowledge: UseKnowledge
     /// Objetivos de los deslizadores aún sin mandar (se juntan para no saturar el puente).
     private var outgoing: [String: Double] = [:]
     private var flushing = false
@@ -17,8 +18,9 @@ final class UseLiveRobot {
     /// Los últimos movimientos (antes, después y cuánto cambió), para que la IA entienda cómo responde.
     private var moves: [[String: Any]] = []
 
-    init(lerobot: UseLeRobot) {
+    init(lerobot: UseLeRobot, knowledge: UseKnowledge) {
         self.lerobot = lerobot
+        self.knowledge = knowledge
         twin.onAttach = { [weak self] in Task { @MainActor in self?.loadTwin() } }
         twin.onMessage = { [weak self] m in
             guard let self, m["type"] as? String == "model" else { return }
@@ -109,10 +111,24 @@ final class UseLiveRobot {
         return out
     }
 
-    /// Espera a que el robot llegue a sus objetivos (o se acabe el tiempo).
-    private func settle(timeout: Double) async {
+    private func clamp(_ batch: [String: Double]) -> ([String: Double], [String]) {
+        var out: [String: Double] = [:], clipped: [String] = []
+        for (j, v) in batch {
+            guard let range = limits[j] else { continue }
+            let value = min(range.upperBound, max(range.lowerBound, v))
+            if value != v { clipped.append(j) }
+            out[j] = value
+        }
+        return (out, clipped)
+    }
+
+    /// Espera a que el robot llegue a sus objetivos (o termine de reproducir, o se acabe el tiempo).
+    private func settle(timeout: Double, waitPlayback: Bool = false) async {
         let deadline = Date().addingTimeInterval(timeout)
         try? await Task.sleep(for: .milliseconds(400))
+        while waitPlayback, Date() < deadline, isLive, lerobot.session?.playing == true {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
         while Date() < deadline, isLive {
             let t = targets, q = joints
             if RealAgentTools.joints.allSatisfy({ abs((q[$0] ?? 0) - (t[$0] ?? 0)) < 3 }) { break }
@@ -122,17 +138,72 @@ final class UseLiveRobot {
 }
 
 extension UseLiveRobot: ChatBody {
-    var chatTools: [[String: Any]] { RealAgentTools.definitions }
+    var chatTools: [[String: Any]] {
+        RealAgentTools.definitions + (knowledge.active == nil ? [] : KnowledgePrompt.liveTools + [RealAgentTools.lookReferences])
+    }
     var chatNotReady: String { "Conecta el robot en vivo para hablar con él." }
 
     func chatSystemPrompt(robotName: String) -> String? {
-        isReady ? RealAgentTools.systemPrompt(robotName: robotName, limits: limits) : nil
+        guard isReady else { return nil }
+        return RealAgentTools.systemPrompt(robotName: robotName, limits: limits)
+            + (knowledge.active.map(KnowledgePrompt.liveSection) ?? "")
     }
 
-    func chatTitle(_ name: String, _ input: [String: Any]) -> String { RealAgentTools.title(for: name) }
+    func chatTitle(_ name: String, _ input: [String: Any]) -> String {
+        switch name {
+        case "go_to_pose": "Ir a «\(input["name"] as? String ?? "")»"
+        case "play_segment": "Reproducir «\(input["name"] as? String ?? "")»"
+        case "look_references": "Mirando las fotos de las demostraciones"
+        default: RealAgentTools.title(for: name)
+        }
+    }
 
     func chatApproval(_ name: String, _ input: [String: Any]) -> String? {
-        RealAgentTools.approval(for: name, input: input, current: joints)
+        let offsets = Self.offsets(input)
+        let extra = offsets.isEmpty ? "" : "\nAjustes: " + offsets.map { "\($0.key) \($0.value >= 0 ? "+" : "")\(RealAgentTools.format($0.value, $0.key))" }.joined(separator: ", ")
+        switch name {
+        case "go_to_pose":
+            guard let pose = knowledge.active?.poses.first(where: { $0.name == input["name"] as? String }) else { return nil }
+            return RealAgentTools.joints.map { j in "\(j): \(RealAgentTools.format(joints[j] ?? 0, j)) → \(RealAgentTools.format((pose.joints[j] ?? 0) + (offsets[j] ?? 0), j))" }
+                .joined(separator: "\n") + extra
+        case "play_segment":
+            guard let s = knowledge.active?.segments.first(where: { $0.name == input["name"] as? String }) else { return nil }
+            let speed = Self.speed(input)
+            return "Demostración \(s.episode), de \(s.from) a \(s.to) s, a \(Int(speed * 100)) % de su velocidad\(s.note.isEmpty ? "" : " (\(s.note))")." + extra
+        default:
+            return RealAgentTools.approval(for: name, input: input, current: joints)
+        }
+    }
+
+    private static func offsets(_ input: [String: Any]) -> [String: Double] {
+        (input["offsets"] as? [[String: Any]] ?? []).reduce(into: [:]) { out, o in
+            if let j = o["joint"] as? String, let d = (o["delta"] as? NSNumber)?.doubleValue, d != 0 { out[j] = d }
+        }
+    }
+
+    private static func speed(_ input: [String: Any]) -> Double {
+        min(1, max(0.25, (input["speed"] as? NSNumber)?.doubleValue ?? 0.5))
+    }
+
+    /// Mueve a `batch` y devuelve el antes y el después (como move_joints).
+    private func perform(_ batch: [String: Double], clipped: [String] = [], play: (() async throws -> Double)? = nil) async throws -> ChatToolOutput {
+        let before = await pose()
+        let start = joints
+        if let play {
+            let duration = try await play()
+            await settle(timeout: duration + 3, waitPlayback: true)
+        } else {
+            try await lerobot.liveTargets(batch)
+            let longest = batch.map { abs($0.value - (start[$0.key] ?? $0.value)) }.max() ?? 0
+            await settle(timeout: longest / 40 + 2)
+        }
+        let after = await pose()
+        let move = RealAgentTools.move(asked: batch, start: start, end: joints, before: before["gripper_cm"], after: after["gripper_cm"])
+        var out: [String: Any] = ["move": move, "now": after]
+        if !moves.isEmpty { out["previous_moves"] = Array(moves.suffix(3)) }
+        moves = Array((moves + [move]).suffix(5))
+        if !clipped.isEmpty { out["clipped_to_limits"] = clipped }
+        return .text(AgentTools.json(out), problem: clipped.isEmpty ? nil : "Ajustado al rango: \(clipped.joined(separator: ", "))")
     }
 
     func chatRun(_ name: String, _ input: [String: Any]) async throws -> ChatToolOutput {
@@ -144,27 +215,39 @@ extension UseLiveRobot: ChatBody {
             return .text(AgentTools.json(out))
 
         case "move_joints":
-            var batch: [String: Double] = [:], clipped: [String] = []
-            var longest = 0.0
+            var batch: [String: Double] = [:]
             for t in input["targets"] as? [[String: Any]] ?? [] {
-                guard let j = t["joint"] as? String, let v = (t["value"] as? NSNumber)?.doubleValue, let range = limits[j] else { continue }
-                let value = min(range.upperBound, max(range.lowerBound, v))
-                if value != v { clipped.append(j) }
-                batch[j] = value
-                longest = max(longest, abs(value - (joints[j] ?? value)))
+                if let j = t["joint"] as? String, let v = (t["value"] as? NSNumber)?.doubleValue { batch[j] = v }
             }
-            let before = await pose()
-            let start = joints
-            try await lerobot.liveTargets(batch)
-            await settle(timeout: longest / 40 + 2)
-            let after = await pose()
-            let end = joints
-            let move = RealAgentTools.move(asked: batch, start: start, end: end, before: before["gripper_cm"], after: after["gripper_cm"])
-            var out: [String: Any] = ["move": move, "now": after]
-            if !moves.isEmpty { out["previous_moves"] = Array(moves.suffix(3)) }
-            moves = Array((moves + [move]).suffix(5))
-            if !clipped.isEmpty { out["clipped_to_limits"] = clipped }
-            return .text(AgentTools.json(out), problem: clipped.isEmpty ? nil : "Ajustado al rango: \(clipped.joined(separator: ", "))")
+            let (clamped, clipped) = clamp(batch)
+            return try await perform(clamped, clipped: clipped)
+
+        case "go_to_pose":
+            guard let pose = knowledge.active?.poses.first(where: { $0.name == input["name"] as? String }) else {
+                return .text("No hay una pose con ese nombre.", problem: "Pose desconocida")
+            }
+            let target = pose.joints.merging(Self.offsets(input)) { $0 + $1 }
+            let (clamped, clipped) = clamp(target)
+            return try await perform(clamped, clipped: clipped)
+
+        case "play_segment":
+            guard let s = knowledge.active?.segments.first(where: { $0.name == input["name"] as? String }),
+                  let traj = knowledge.active?.trajectories[String(s.episode)] else {
+                return .text("No hay un tramo con ese nombre.", problem: "Tramo desconocido")
+            }
+            let offsets = Self.offsets(input), speed = Self.speed(input)
+            let points = traj.filter { $0[0] >= s.from - 0.01 && $0[0] <= s.to + 0.01 }.map { row in
+                [row[0]] + RealAgentTools.joints.enumerated().map { i, j in row[i + 1] + (offsets[j] ?? 0) }
+            }
+            guard let last = points.last else { return .text("El tramo está vacío.", problem: "Tramo vacío") }
+            let end = Dictionary(uniqueKeysWithValues: zip(RealAgentTools.joints, last.dropFirst()))
+            return try await perform(clamp(end).0, play: {
+                try await self.lerobot.liveTrajectory(points, speed: speed)
+                return (s.to - s.from) / speed + 2
+            })
+
+        case "look_references":
+            return .images((knowledge.active?.pictures ?? []).map { ($0.label, $0.jpeg) })
 
         case "look":
             let photos = try await lerobot.liveLook()

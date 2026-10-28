@@ -22,6 +22,7 @@ struct CuriosityApp: App {
     @State private var training: UseTraining
     @State private var tasks = UseTasks()
     @State private var live: UseLiveRobot
+    @State private var knowledge: UseKnowledge
     @State private var liveChat: UseChat
 
     init() {
@@ -37,7 +38,9 @@ struct CuriosityApp: App {
         _library = State(initialValue: UseLibrary(robots: robots))
         _simulation = State(initialValue: simulation)
         _chat = State(initialValue: UseChat(settings: settings, body: simulation))
-        let live = UseLiveRobot(lerobot: lerobot)
+        let knowledge = UseKnowledge(settings: settings, lerobot: lerobot)
+        _knowledge = State(initialValue: knowledge)
+        let live = UseLiveRobot(lerobot: lerobot, knowledge: knowledge)
         _live = State(initialValue: live)
         _liveChat = State(initialValue: UseChat(settings: settings, body: live))
         #if DEBUG
@@ -65,6 +68,7 @@ struct CuriosityApp: App {
                 .environment(training)
                 .environment(tasks)
                 .environment(live)
+                .environment(knowledge)
                 .environment(\.liveChat, liveChat)
                 .frame(minWidth: 1000, minHeight: 640)
         }

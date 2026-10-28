@@ -198,6 +198,85 @@ def cmd_preflight(msg: dict) -> dict:
     return {"checks": checks, "jpeg": jpeg}
 
 
+def cmd_study(msg: dict) -> dict:
+    """Lo que la IA necesita para estudiar un dataset de LeRobot (local o del Hub, se baja solo lo usado):
+    tareas, trayectorias de unas demostraciones (en grados con la calibración de este robot), cuándo cierra
+    y abre la pinza, y fotos de esos momentos. Para la IA y para reproducir tramos en vivo; no entrena nada."""
+    import numpy as np
+    import cv2
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+
+    repo_id, root = msg["repo_id"], msg.get("root")
+    meta = LeRobotDatasetMetadata(repo_id, root=root)
+    total = meta.total_episodes
+    count = min(int(msg.get("episodes", 6)), total)
+    picks = sorted({round(i * (total - 1) / max(1, count - 1)) for i in range(count)}) if total else []
+    ds = LeRobotDataset(repo_id, root=root, episodes=picks)
+    names = (meta.features.get("observation.state", {}).get("names") or [])
+    names = [n.removesuffix(".pos") for n in names]
+    if not set(JOINTS) <= set(names):
+        raise ValueError(f"Este dataset no es de un SO-100/101 (articulaciones: {', '.join(names) or 'ninguna'}).")
+    order = [names.index(j) for j in JOINTS]
+    video_keys = list(meta.video_keys)
+
+    states = np.asarray(ds.hf_dataset["observation.state"], dtype=float)[:, order]
+    episodes_col = np.asarray(ds.hf_dataset["episode_index"])
+    times = np.asarray(ds.hf_dataset["timestamp"], dtype=float)
+    body = states[:, :5]
+    degrees = np.abs(body).max() > 110  # con use_degrees los valores pasan de ±100; si no, van de -100 a 100
+    half = half_spans(msg.get("follower_id"))
+    to_deg = (lambda row: row) if degrees else (lambda row: [v / 100 * half[j] if j != "gripper" else v for j, v in zip(JOINTS, row)])
+
+    tasks = {int(i): str(t) for t, i in zip(meta.tasks.index, meta.tasks["task_index"])} if hasattr(meta.tasks, "index") else {}
+    out_eps, keyframes = [], []
+    for e in picks:
+        rows = np.nonzero(episodes_col == e)[0]
+        if len(rows) == 0:
+            continue
+        t0 = times[rows[0]]
+        step = max(1, int(round(meta.fps / 10)))  # 10 por segundo alcanza para reproducir
+        traj = [[round(float(times[r] - t0), 2)] + [round(float(v), 1) for v in to_deg(states[r])] for r in rows[::step]]
+        grip = states[rows, 5]
+        events, closing = [], None
+        smooth = np.convolve(grip, np.ones(5) / 5, mode="same")
+        diff = np.diff(smooth)
+        for k in range(1, len(diff)):
+            sign = -1 if diff[k] < -0.4 else (1 if diff[k] > 0.4 else 0)
+            if sign and sign != closing:
+                events.append({"t": round(float(times[rows[k]] - t0), 2), "gripper": "cierra" if sign < 0 else "abre",
+                               "row": int(rows[k])})
+                closing = sign
+        task_index = int(np.asarray(ds.hf_dataset["task_index"])[rows[0]]) if "task_index" in ds.hf_dataset.column_names else 0
+        out_eps.append({"episode": int(e), "task": tasks.get(task_index, ""), "duration_s": round(float(times[rows[-1]] - t0), 1),
+                        "trajectory": traj, "gripper_events": [{k: v for k, v in ev.items() if k != "row"} for ev in events]})
+        if len(keyframes) < 12 and video_keys:
+            moments = [("inicio", int(rows[0]))] + [(f"pinza {ev['gripper']} ({ev['t']} s)", ev["row"]) for ev in events[:3]] + [("final", int(rows[-1]))]
+            for label, r in moments:
+                try:
+                    img = ds[int(r)][video_keys[0]]  # r es la posición dentro de lo cargado
+                    rgb = (img.permute(1, 2, 0).numpy() * 255).astype("uint8") if hasattr(img, "permute") else np.asarray(img)
+                    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+                    bgr = cv2.resize(bgr, (384, int(384 * bgr.shape[0] / bgr.shape[1])))
+                    ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                    keyframes.append({"episode": int(e), "label": label, "jpeg": base64.b64encode(buf.tobytes()).decode()})
+                except Exception:
+                    traceback.print_exc(file=sys.stderr)
+    return {"repo_id": repo_id, "fps": meta.fps, "robot_type": meta.robot_type, "total_episodes": total,
+            "tasks": list(tasks.values())[:10], "cameras": video_keys, "units": "grados" if degrees else "convertido a grados con la calibración de este robot",
+            "episodes": out_eps, "keyframes": keyframes}
+
+
+def half_spans(follower_id):
+    """Medio recorrido en grados de cada articulación según la calibración guardada (para convertir -100..100)."""
+    out = {j: 90.0 for j in JOINTS}
+    for path in (CALIBRATION_ROOT / "robots").glob(f"*/{follower_id}.json") if follower_id else []:
+        for j, c in json.loads(path.read_text()).items():
+            if j in out:
+                out[j] = (c["range_max"] - c["range_min"]) / 2 * 360 / 4095
+        break
+    return out
+
+
 def dataset_info(root: Path) -> dict | None:
     info = root / "meta" / "info.json"
     if not info.exists():
@@ -545,16 +624,21 @@ class Live(Session):
         self.joints, self.targets, self.limits, self.start_pose = {}, {}, {}, {}
         self.lock = threading.Lock()
         self.camera_change = None  # nuevas cámaras extra, se aplican en el hilo del robot
+        self.trajectory = None     # (inicio, [[t, j1..j6], ...]) que se está reproduciendo
 
     def control(self, action, payload=None):
         with self.lock:
             if action == "targets":
+                self.trajectory = None
                 for j, v in (payload or {}).items():
                     if j in self.limits:
                         lo, hi = self.limits[j]
                         self.targets[j] = min(hi, max(lo, float(v)))
             elif action == "home":
+                self.trajectory = None
                 self.targets = dict(self.start_pose)
+            elif action == "trajectory":
+                self._start_trajectory(payload)
             elif action == "cameras":
                 self.camera_change = [int(i) for i in payload or []]
 
@@ -594,6 +678,7 @@ class Live(Session):
             # Al terminar: de vuelta a la pose del principio, despacio, y después se sueltan los motores.
             self.phase = "returning"
             with self.lock:
+                self.trajectory = None
                 self.targets = dict(self.start_pose)
             deadline = time.monotonic() + 8
             self._loop(robot, command, until=lambda: time.monotonic() > deadline or self._settled(command))
@@ -604,6 +689,36 @@ class Live(Session):
                     robot.disconnect()
             except Exception:
                 pass
+
+    def _start_trajectory(self, payload):
+        """Reproduce un tramo de una demostración: primero va despacio a su primer punto y luego lo sigue,
+        a `speed` (0.25 a 1) de su velocidad original. Llamar con el candado tomado."""
+        points = [list(map(float, p)) for p in (payload or {}).get("points", [])]
+        if not points:
+            return
+        speed = min(1.0, max(0.25, float((payload or {}).get("speed", 0.5))))
+        first = dict(zip(JOINTS, points[0][1:]))
+        reach = max(abs(first[j] - self.joints.get(j, first[j])) for j in JOINTS)
+        approach = reach / 30 + 0.3
+        t0 = points[0][0]
+        timeline = [[0.0] + [self.joints.get(j, first[j]) for j in JOINTS]]
+        timeline += [[approach + (p[0] - t0) / speed] + p[1:] for p in points]
+        self.trajectory = (time.monotonic(), timeline)
+
+    def _follow_trajectory(self):
+        """Los objetivos del momento según la trayectoria (interpolada), dentro del rango."""
+        start, timeline = self.trajectory
+        now = time.monotonic() - start
+        if now >= timeline[-1][0]:
+            pose, self.trajectory = timeline[-1][1:], None
+        else:
+            k = next(i for i, p in enumerate(timeline) if p[0] > now)
+            a, b = timeline[k - 1], timeline[k]
+            f = (now - a[0]) / max(1e-6, b[0] - a[0])
+            pose = [x + (y - x) * f for x, y in zip(a[1:], b[1:])]
+        for j, v in zip(JOINTS, pose):
+            lo, hi = self.limits[j]
+            self.targets[j] = min(hi, max(lo, v))
 
     def _apply_cameras(self, robot, indexes):
         """Agrega o quita cámaras extra con el robot conectado. Una que no abre se avisa y se omite."""
@@ -633,6 +748,8 @@ class Live(Session):
         while not until():
             t = time.perf_counter()
             with self.lock:
+                if self.trajectory:
+                    self._follow_trajectory()
                 targets = dict(self.targets)
                 change, self.camera_change = self.camera_change, None
             if change is not None:
@@ -658,7 +775,7 @@ class Live(Session):
     def status(self):
         with self.lock:
             targets = {j: round(v, 1) for j, v in self.targets.items()}
-        return {**super().status(), "joints": self.joints, "targets": targets,
+        return {**super().status(), "joints": self.joints, "targets": targets, "playing": self.trajectory is not None,
                 "limits": {j: [round(lo, 1), round(hi, 1)] for j, (lo, hi) in self.limits.items()}}
 
 
@@ -762,7 +879,7 @@ class Rollout(Session):
 # Bucle principal
 # ---------------------------------------------------------------------------------------------
 current: Session | None = None
-QUERIES = {"hello": cmd_hello, "calibrations": cmd_calibrations, "cameras": cmd_cameras, "snapshot": cmd_snapshot, "preflight": cmd_preflight,
+QUERIES = {"hello": cmd_hello, "calibrations": cmd_calibrations, "cameras": cmd_cameras, "snapshot": cmd_snapshot, "preflight": cmd_preflight, "study": cmd_study,
            "datasets": cmd_datasets, "push_dataset": cmd_push_dataset, "delete_dataset": cmd_delete_dataset}
 SESSIONS = {"teleop": Teleop, "record": Record, "rollout": Rollout, "live": Live}
 
@@ -786,10 +903,12 @@ def handle(msg: dict) -> dict:
         if current is not None and current.active:
             current.control(cmd)
         return {}
-    if cmd in ("live_targets", "live_home", "live_cameras"):
+    if cmd in ("live_targets", "live_home", "live_cameras", "live_trajectory"):
         if not (isinstance(current, Live) and current.active):
             raise ValueError("El robot no está en vivo.")
-        current.control(cmd.removeprefix("live_"), msg.get("targets") if cmd != "live_cameras" else msg.get("extra_cameras"))
+        payload = {"live_targets": msg.get("targets"), "live_cameras": msg.get("extra_cameras"),
+                   "live_trajectory": {"points": msg.get("points"), "speed": msg.get("speed")}}.get(cmd)
+        current.control(cmd.removeprefix("live_"), payload)
         return {}
     if cmd == "live_look":
         if not (isinstance(current, Live) and current.active):

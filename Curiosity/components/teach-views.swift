@@ -161,11 +161,12 @@ struct HubPickerView: View {
     let onSearch: () -> Void
     let onPick: (HubDataset) -> Void
     let onClose: () -> Void
+    var detail = "Demostraciones que otros grabaron con un SO-101. Entrenas con ellas en lugar de grabar las tuyas; se bajan solas."
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             Text("Datos de Hugging Face").font(.title2.weight(.semibold))
-            Text("Demostraciones que otros grabaron con un SO-101. Entrenas con ellas en lugar de grabar las tuyas; se bajan solas.")
+            Text(detail)
                 .font(.callout).foregroundStyle(Theme.muted)
             HStack {
                 TextField("Buscar", text: $query).textFieldStyle(.roundedBorder).onSubmit(onSearch)

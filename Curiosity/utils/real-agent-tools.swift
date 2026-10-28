@@ -37,6 +37,10 @@ enum RealAgentTools {
          "input_schema": ["type": "object", "properties": properties, "required": required, "additionalProperties": false] as [String: Any]]
     }
 
+    static let lookReferences: [String: Any] = tool(
+        "look_references", "Muestra las fotos de los momentos clave de las demostraciones que estudiaste, para comparar con lo que ves.",
+        properties: [:], required: [])
+
     static func systemPrompt(robotName: String, limits: [String: ClosedRange<Double>]) -> String {
         let ranges = joints.compactMap { j in
             limits[j].map { "- \(j): de \(format($0.lowerBound, j)) a \(format($0.upperBound, j)) (recorrido total \(format($0.upperBound - $0.lowerBound, j)))" }
