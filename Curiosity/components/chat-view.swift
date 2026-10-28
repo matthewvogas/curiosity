@@ -224,27 +224,32 @@ private struct ChatComposer: View {
                 .font(.body)
                 .lineLimit(1...6)
                 .focused($focused)
-                .padding(.vertical, 7)
+                .padding(.vertical, 5)  // una línea mide lo mismo que el botón: quedan centrados
                 .disabled(!enabled)
                 .onSubmit { if !isRunning { onSend() } }
             Button(action: isRunning ? onStop : onSend) {
                 Image(systemName: isRunning ? "stop.fill" : "arrow.up")
                     .font(.system(size: 12, weight: .bold))
-                    .frame(width: 14, height: 14)
+                    .foregroundStyle(active ? Color.white : Theme.faint)
+                    .frame(width: Self.button, height: Self.button)
+                    .glassEffect(active ? .regular.tint(.accentColor).interactive() : .regular, in: .circle)
             }
-            .buttonStyle(.glassProminent)
-            .buttonBorderShape(.circle)
+            .buttonStyle(.plain)
             .disabled(!isRunning && !canSend)
             .keyboardShortcut(isRunning ? .cancelAction : .defaultAction)
             .help(isRunning ? "Detener" : "Enviar")
         }
         .padding(.leading, Theme.Space.m)
-        .padding(.trailing, 5)
-        .padding(.vertical, 4)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+        .padding([.vertical, .trailing], Self.inset)
+        // Esquinas concéntricas con el botón: mismo margen arriba, abajo y a la derecha.
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Self.button / 2 + Self.inset))
         .contentShape(.rect)
         .onTapGesture { focused = true }
     }
+
+    private static let button: CGFloat = 28
+    private static let inset: CGFloat = 6
+    private var active: Bool { canSend || isRunning }
 
     private var canSend: Bool { enabled && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 }
