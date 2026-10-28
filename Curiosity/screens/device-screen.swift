@@ -1,0 +1,38 @@
+import SwiftUI
+
+/// Un robot físico conectado: qué es, cómo se le habla y la prueba de conexión.
+struct DeviceScreen: View {
+    let device: Device
+    @Environment(UseDevices.self) private var devices
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HardwareTestView(
+                port: device.id,
+                name: Binding(get: { device.name }, set: { v in devices.update(device.id) { $0.name = v } }),
+                placeholder: device.guess ?? "Robot USB",
+                bus: Binding(get: { device.bus }, set: { v in devices.update(device.id) { $0.bus = v; $0.baud = v.defaultBaud } }),
+                baud: Binding(get: { device.baud }, set: { v in devices.update(device.id) { $0.baud = v } }),
+                testing: devices.isProbing, progress: progress, result: result, resultIsError: isError, found: device.found,
+                onTest: { Task { await devices.test(device.id) } })
+            .frame(maxWidth: 640)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .navigationTitle(device.name.isEmpty ? (device.guess ?? "Robot USB") : device.name)
+        .navigationSubtitle("Conectado por USB · \(device.portName)")
+        .onChange(of: device.id) { devices.resetProbe() }
+    }
+
+    private var progress: Double { if case .running(let p) = devices.probe { p } else { 0 } }
+
+    private var result: String? {
+        if case .failed(let m) = devices.probe { return m }
+        guard let at = device.probedAt else { return nil }
+        let when = at.formatted(date: .omitted, time: .shortened)
+        return device.found.isEmpty ? "El puerto abrió, pero no respondió ningún motor (\(when)). Revisa la fuente, el tipo y la velocidad."
+                                    : "Conexión correcta: \(device.found.count) motores respondieron (\(when))."
+    }
+
+    private var isError: Bool { if case .failed = devices.probe { true } else { false } }
+}

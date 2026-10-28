@@ -16,7 +16,7 @@ struct CuriosityApp: App {
     @State private var simulation: UseSimulation
     @State private var chat: UseChat
     @State private var library: UseLibrary
-    @State private var hardware: UseHardware
+    @State private var devices = UseDevices()
 
     init() {
         let settings = UseSettings()
@@ -26,7 +26,6 @@ struct CuriosityApp: App {
         _robots = State(initialValue: robots)
         _library = State(initialValue: UseLibrary(robots: robots))
         _simulation = State(initialValue: simulation)
-        _hardware = State(initialValue: UseHardware())
         _chat = State(initialValue: UseChat(settings: settings, simulation: simulation))
         #if DEBUG
         DebugSnapshot.scheduleIfRequested()
@@ -47,7 +46,7 @@ struct CuriosityApp: App {
                 .environment(simulation)
                 .environment(chat)
                 .environment(library)
-                .environment(hardware)
+                .environment(devices)
                 .frame(minWidth: 1000, minHeight: 640)
         }
         .defaultSize(width: 1440, height: 900)

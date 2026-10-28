@@ -74,9 +74,24 @@ nonisolated struct FoundMotor: Identifiable, Equatable, Codable, Sendable {
 
 }
 
-/// Con qué puerto, tipo de motores y velocidad se habla con el robot físico de un modelo.
-struct HardwareProfile: Codable, Equatable {
-    var port: String?
+/// Un robot físico conectado por USB (un adaptador serie). Su id es el puerto.
+struct Device: Identifiable, Codable, Equatable {
+    var id: String              // /dev/cu.usbmodem…
+    var name: String
     var bus: BusProtocol = .feetech
     var baud = 1_000_000
+    var found: [FoundMotor] = []
+    var probedAt: Date?
+
+    /// Lo que se ve en la lista cuando nadie le puso nombre.
+    var portName: String { id.replacingOccurrences(of: "/dev/cu.", with: "") }
+
+    /// Qué parece ser, por los motores que respondieron.
+    var guess: String? {
+        guard !found.isEmpty else { return nil }
+        let models = Set(found.map(\.modelName))
+        if models == ["STS3215"], found.count == 6 { return "Brazo SO-100 / SO-101" }
+        if models.allSatisfy({ $0.hasPrefix("X") }) { return "Robot con Dynamixel X" }
+        return "\(found.count) motores"
+    }
 }

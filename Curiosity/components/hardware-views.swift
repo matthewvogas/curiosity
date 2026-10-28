@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Probar la conexión con el robot físico: puerto, tipo de motores, velocidad y qué motores respondieron.
+/// Un robot físico conectado: su nombre, tipo de motores, velocidad y qué motores respondieron.
 /// Solo dibuja: datos y acciones llegan por props.
 struct HardwareTestView: View {
-    let ports: [String]
-    @Binding var port: String?
+    let port: String
+    @Binding var name: String
+    let placeholder: String
     @Binding var bus: BusProtocol
     @Binding var baud: Int
     let testing: Bool
@@ -12,7 +13,6 @@ struct HardwareTestView: View {
     let result: String?
     let resultIsError: Bool
     let found: [FoundMotor]
-    let onRefresh: () -> Void
     let onTest: () -> Void
 
     private static let bauds = [57_600, 115_200, 500_000, 1_000_000, 2_000_000, 3_000_000]
@@ -20,10 +20,8 @@ struct HardwareTestView: View {
     var body: some View {
         Form {
             Section {
-                Picker("Puerto", selection: $port) {
-                    if ports.isEmpty { Text("No hay ningún adaptador USB").tag(String?.none) }
-                    ForEach(ports, id: \.self) { Text($0.replacingOccurrences(of: "/dev/", with: "")).tag(String?.some($0)) }
-                }
+                TextField("Nombre", text: $name, prompt: Text(placeholder))
+                LabeledContent("Puerto", value: port.replacingOccurrences(of: "/dev/", with: ""))
                 Picker("Motores", selection: $bus) {
                     ForEach(BusProtocol.allCases) { b in Text("\(b.name) · \(b.example)").tag(b) }
                 }
@@ -31,7 +29,7 @@ struct HardwareTestView: View {
                     ForEach(Self.bauds, id: \.self) { Text("\($0.formatted()) baudios").tag($0) }
                 }
             } footer: {
-                Text("Conecta el robot por USB y su fuente de poder. La prueba solo lee: no mueve nada. Si LeRobot está usando el puerto, ciérralo primero.")
+                Text("«Probar» abre el puerto, busca qué motores responden y lo cierra: solo lee, no mueve nada. Si LeRobot está usando este puerto, ciérralo primero.")
                     .foregroundStyle(Theme.muted)
             }
             .disabled(testing)
@@ -48,8 +46,7 @@ struct HardwareTestView: View {
                         Text("Sin probar").foregroundStyle(Theme.muted)
                     }
                     Spacer()
-                    Button("Actualizar puertos", action: onRefresh).disabled(testing)
-                    Button("Probar", action: onTest).buttonStyle(.borderedProminent).disabled(testing || port == nil)
+                    Button("Probar", action: onTest).buttonStyle(.borderedProminent).disabled(testing)
                 }
                 ForEach(found) { m in
                     HStack {

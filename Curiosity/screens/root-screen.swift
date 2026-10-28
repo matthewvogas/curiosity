@@ -4,18 +4,23 @@ import UniformTypeIdentifiers
 /// Ventana principal: biblioteca de robots a la izquierda y el espacio de trabajo del elegido.
 struct RootScreen: View {
     @Environment(UseRobots.self) private var robots
+    @Environment(UseDevices.self) private var devices
     @State private var addingRobot = false
 
     var body: some View {
         NavigationSplitView {
-            SidebarList(robots: robots.robots, selectedID: robots.selectedID,
-                        onSelect: { robots.selectedID = $0.id },
+            SidebarList(robots: robots.robots, selectedID: devices.selectedID == nil ? robots.selectedID : nil,
+                        devices: devices.devices, selectedDeviceID: devices.selectedID,
+                        onSelect: { devices.selectedID = nil; robots.selectedID = $0.id },
+                        onSelectDevice: { devices.selectedID = $0.id },
                         onAdd: { addingRobot = true },
                         onRemove: robots.remove,
                         onReveal: reveal)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 300)
         } detail: {
-            if let robot = robots.selected {
+            if let device = devices.selected {
+                DeviceScreen(device: device)
+            } else if let robot = robots.selected {
                 WorkspaceScreen(robot: robot)
             } else {
                 ContentUnavailableView {

@@ -48,3 +48,7 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "-"
+      configs:
+        # La versión de prueba puede abrirse junto a la normal.
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.rosvelt.curiosity.studio.debug
