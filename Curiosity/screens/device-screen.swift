@@ -46,8 +46,32 @@ struct DeviceScreen: View {
             RunningView(session: s, frame: lerobot.frame, onStop: lerobot.stop)
         } else if let task = tasks.selected(for: device.id) {
             ScrollView { taskFlow(task).padding(Theme.Space.xxl) }
-        } else {
+        } else if tasks.tasks(for: device.id).isEmpty {
             TaskEmptyState { title in tasks.add(title: title, deviceID: device.id) }
+        } else {
+            RobotOverview(tasks: overviewTasks, datasets: datasets.local, models: overviewModels, canRun: device.canRunPolicy && !lerobot.isBusy,
+                          onOpenTask: { tasks.selectedID = $0 },
+                          onNewTask: { tasks.composingFor = device.id },
+                          onRevealDataset: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: $0.root)]) },
+                          onRunModel: { runJob = $0; confirm = .run })
+        }
+    }
+
+    private var overviewTasks: [OverviewTask] {
+        tasks.tasks(for: device.id).map { t in
+            let s = TaskStatus.of(t, datasets: datasets.local, jobs: training.jobs, progress: training.progress)
+            return OverviewTask(id: t.id, title: t.title, summary: s.summary(t), phase: s.phase,
+                                fraction: s.isTraining ? s.progress?.fraction : nil)
+        }
+    }
+
+    private var overviewModels: [OverviewModel] {
+        training.jobs.map { j in
+            let p = training.progress[j.name]
+            let title = tasks.tasks.first { j.name == $0.trainName || j.name.hasPrefix($0.trainName + "_") }?.title ?? j.name
+            return OverviewModel(id: j.name, title: title,
+                                 detail: "\(policyName(j.policy)) · \(j.steps.formatted()) pasos · \(j.dataset) · \(j.started.formatted(date: .abbreviated, time: .omitted))",
+                                 ready: p?.hasModel == true, training: p?.running == true)
         }
     }
 
@@ -121,7 +145,7 @@ struct DeviceScreen: View {
                      status: hasModel ? "El robot hace la tarea con lo que aprendió, durante \(Int(task.runSeconds)) s."
                                       : "Disponible cuando termine el entrenamiento.",
                      help: "El robot se mueve solo. Quédate cerca de la fuente; Esc lo detiene y vuelve a su pose inicial.") {
-                Button("Probar en el robot") { confirm = .run }
+                Button("Probar en el robot") { runJob = nil; confirm = .run }
                     .buttonStyle(.borderedProminent)
                     .disabled(!device.canRunPolicy || lerobot.isBusy || !hasModel)
             } options: {
@@ -135,30 +159,29 @@ struct DeviceScreen: View {
     private func taskHeader(_ task: TeachTask) -> some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Tarea").font(.caption).foregroundStyle(Theme.muted)
+                Button { tasks.selectedID = nil } label: {
+                    Label("Todas las tareas", systemImage: "chevron.left").font(.caption)
+                }
+                .buttonStyle(.link)
+                .help("Volver al resumen del robot")
                 Text(task.title).font(.title2.weight(.semibold))
             }
             Spacer()
             Menu {
-                ForEach(tasks.tasks(for: device.id)) { t in
-                    Button(t.title) { tasks.selectedID = t.id }
-                }
-                Divider()
-                Button("Nueva tarea…") { tasks.selectedID = nil; newTask = true }
                 Button("Quitar esta tarea", role: .destructive) { tasks.remove(task.id) }
             } label: {
-                Text("Tareas")
+                Icon(name: .more, size: 16)
             }
+            .menuStyle(.button)
+            .buttonStyle(.borderless)
+            .menuIndicator(.hidden)
             .fixedSize()
-            .help("Cambiar de tarea o empezar otra")
-        }
-        .sheet(isPresented: $newTask) {
-            TaskEmptyState { title in tasks.add(title: title, deviceID: device.id); newTask = false }
-                .frame(width: 700, height: 440)
+            .help("Más")
+            .accessibilityLabel("Más opciones de la tarea")
         }
     }
 
-    @State private var newTask = false
+    @State private var runJob: String?
 
     // MARK: - Toolbar y hojas
 
@@ -220,6 +243,13 @@ struct DeviceScreen: View {
     // MARK: - Acciones
 
     private func run(_ action: Action?) async {
+        // «Probar» desde el resumen: un modelo concreto, aunque no haya una tarea abierta.
+        if action == .run, let name = runJob, let job = training.jobs.first(where: { $0.name == name }) {
+            runJob = nil
+            let task = tasks.tasks.first { name == $0.trainName || name.hasPrefix($0.trainName + "_") }
+            await lerobot.runPolicy(device, modelPath: job.modelPath, task: task?.title ?? job.dataset, seconds: task?.runSeconds ?? 60)
+            return
+        }
         guard let task = tasks.selected(for: device.id) else {
             if action == .teleop { await lerobot.teleoperate(device) }
             return
@@ -261,12 +291,12 @@ struct DeviceScreen: View {
 
     // MARK: - Estado
 
-    private func demosRecorded(_ task: TeachTask) -> Int {
-        datasets.local.first { $0.source == (task.hubDataset ? "hub" : "local") && $0.name == task.dataset }?.episodes ?? 0
-    }
+    private func demosRecorded(_ task: TeachTask) -> Int { status(task).demos }
 
-    private func trainingJob(_ task: TeachTask) -> TrainJob? {
-        training.jobs.first { $0.name == task.trainName || $0.name.hasPrefix(task.trainName + "_") }
+    private func trainingJob(_ task: TeachTask) -> TrainJob? { status(task).job }
+
+    private func status(_ task: TeachTask) -> TaskStatus {
+        TaskStatus.of(task, datasets: datasets.local, jobs: training.jobs, progress: training.progress)
     }
 
     private func trainStatus(_ task: TeachTask, demos: Int, progress: TrainProgress?) -> String {

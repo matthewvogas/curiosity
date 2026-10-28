@@ -5,6 +5,7 @@ import SwiftUI
 /// Sin tareas: una sola pregunta, centrada como los estados vacíos de macOS, con un campo tipo composer.
 struct TaskEmptyState: View {
     let onCreate: (String) -> Void
+    var onCancel: (() -> Void)? = nil
     @State private var title = ""
     @FocusState private var focused: Bool
 
@@ -60,6 +61,11 @@ struct TaskEmptyState: View {
             Label("Funciona mejor con tareas cortas, siempre iguales y a la vista de la cámara.", systemImage: "lightbulb")
                 .font(.caption).foregroundStyle(Theme.faint)
                 .padding(.bottom, Theme.Space.xl)
+        }
+        .overlay(alignment: .topTrailing) {
+            if let onCancel {
+                Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction).padding(Theme.Space.l)
+            }
         }
         .onAppear { focused = true }
     }

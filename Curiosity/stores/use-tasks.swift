@@ -5,7 +5,10 @@ import Observation
 @Observable
 final class UseTasks {
     private(set) var tasks: [TeachTask] = TaskQueries.load()
+    /// La tarea abierta; sin ninguna, se ve el resumen del robot.
     var selectedID: UUID?
+    /// El robot para el que se está escribiendo una tarea nueva (abre la hoja).
+    var composingFor: String?
 
     func tasks(for deviceID: String) -> [TeachTask] {
         tasks.filter { $0.deviceID == deviceID }.sorted { $0.createdAt > $1.createdAt }
@@ -13,7 +16,7 @@ final class UseTasks {
 
     func selected(for deviceID: String) -> TeachTask? {
         let mine = tasks(for: deviceID)
-        return mine.first { $0.id == selectedID } ?? mine.first
+        return mine.first { $0.id == selectedID }
     }
 
     /// Una tarea nueva: su dataset se nombra a partir de lo que debe hacer.
