@@ -3,10 +3,11 @@
 Un simulador de robots con IA para macOS. Cargas cualquier robot (URDF o MJCF), conectas un modelo de IA y le
 pides tareas en tus palabras: la IA mira la escena, planea y mueve el robot en una simulación con física.
 
-- **Simulación** (lo esencial de MuJoCo, sobre Rapier): cuerpos con masa e inercia del URDF, articulaciones
-  revolute / continuous / prismatic / fixed con límites, motores de posición PD con fuerza máxima,
-  contactos con fricción y rebote, sensores (posición, velocidad, fuerza, contactos), cámaras montadas en
-  el robot, objetos libres, pausa, paso a paso y velocidad.
+- **Simulación con MuJoCo** (el binding oficial de Google DeepMind, `@mujoco/mujoco` 3.15, en WebAssembly):
+  un MJCF se carga tal cual (actuadores, tendones, igualdades, contactos); un URDF se convierte a MJCF con
+  sus masas, inercias, límites, motores de posición (kp, kv, fuerza máxima), <mimic> como igualdades y las
+  mallas cóncavas partidas en piezas convexas. Contactos, sensores (posición, velocidad, fuerza, contactos),
+  cámaras montadas, objetos libres, pausa, paso a paso y velocidad. three.js dibuja.
 - **IA**: Claude con herramientas (`get_state`, `move_joints`, `look`, `add_object`, `remove_object`,
   `reset`). La API key se guarda en el Llavero. Las conversaciones se guardan por robot (Historial, en el chat).
 - **Robots reales** (por ahora el SO-101), con tu instalación de LeRobot (la app la busca sola; si no, se
@@ -43,11 +44,12 @@ Curiosity/
   types/        tipos de datos
   resources/
     studio/     motor de simulación, sin internet:
-                  engine.js      física, escena y API para la app
+                  engine.js      escena, física (MuJoCo) y API para la app
+                  mjcf-build.js  URDF → MJCF y la escena (piso y objetos)
                   model-urdf.js  URDF → modelo interno
                   model-mjcf.js  MJCF → modelo interno
                   decompose.js   descomposición convexa de mallas
-                  lib/           three.js y Rapier
+                  lib/           three.js y MuJoCo (WebAssembly)
     library/    catálogo de MuJoCo Menagerie (menagerie.json)
     robots/     robots incluidos: <id>/<id>.urdf + <id>.studio.json + mallas
 ```

@@ -1,16 +1,16 @@
-// Motor de simulación de Curiosity Studio. Agnóstico al robot: arma cualquier URDF con física real.
+// Motor de simulación de Curiosity Studio. Agnóstico al robot: cualquier URDF o MJCF con física de MuJoCo
+// (el binding oficial de Google DeepMind, compilado a WebAssembly) y three.js para dibujar.
 //
-// Lo esencial de MuJoCo, sobre Rapier:
-//  · Cuerpos rígidos por link, con su masa e inercia (<inertial>) y colisiones convexas (<collision>).
-//  · Articulaciones revolute, continuous, prismatic y fixed, con límites (<limit>).
-//  · Un actuador de posición por articulación móvil: PD (kp, kd) con fuerza máxima (forcerange).
-//  · Contactos con fricción y rebote, gravedad, paso de tiempo y subpasos configurables.
-//  · Sensores: posición, velocidad y fuerza de cada articulación; contactos y fuerza por link.
-//  · Cámaras montadas en cualquier link, objetos libres en la escena, pausa, paso a paso y velocidad.
+//  · MJCF: MuJoCo lo carga tal cual (con sus actuadores, tendones, igualdades y contactos).
+//  · URDF: se arma un MJCF desde el modelo interno (mjcf-build.js): cuerpos con su masa e inercia,
+//    colisiones convexas (las mallas cóncavas se parten con decompose.js), un actuador de posición por
+//    articulación móvil (kp, kv, fuerza máxima) y las <mimic> como igualdades.
+//  · La escena (piso y objetos libres) envuelve al robot con <include>; agregar o quitar un objeto recompila.
+//  · Sensores: posición, velocidad y fuerza de cada articulación; contactos y fuerza por pieza.
+//  · Cámaras montadas en cualquier pieza, pausa, paso a paso y velocidad.
 //
-// Convenciones: el mundo físico es el del URDF (z hacia arriba, metros, radianes). three.js es y-arriba,
-// así que todo cuelga de un grupo girado −90° en x. Cada cuerpo se crea alineado con el mundo en la
-// configuración cero; así el eje de cada articulación es el mismo vector en los dos cuerpos.
+// Convenciones: el mundo es z hacia arriba, metros, radianes. three.js es y-arriba, así que todo cuelga de
+// un grupo girado −90° en x. Cada pieza se dibuja en su propio marco, el de su cuerpo en MuJoCo.
 //
 // La app nativa lo maneja con window.studio.* y recibe el estado por webkit.messageHandlers.studio.
 
@@ -21,24 +21,26 @@ import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
-import RAPIER_MODULE from "./lib/rapier.es.js";
+import loadMujoco from "./lib/mujoco/mujoco.js";
 import { parseURDF } from "./model-urdf.js";
 import { parseMJCF } from "./model-mjcf.js";
 import { triangles, decompose } from "./decompose.js";
+import { robotXML, sceneXML, ROBOT_BITS, SELF_BITS } from "./mjcf-build.js";
 
-const RAPIER = RAPIER_MODULE;
+let mj = null;   // el módulo de MuJoCo
 const post = (msg) => {
   try { window.webkit.messageHandlers.studio.postMessage(msg); } catch { /* fuera de la app no hay a quién avisar */ }
 };
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-// Grupos de colisión: el robot (1) choca con el resto (2); consigo mismo solo si se activa.
-const G_ROBOT = 0x0001, G_WORLD = 0x0002;
-const groups = (member, filter) => (member << 16) | filter;
+// Tipos de objeto de MuJoCo (mjtObj) que se buscan por nombre.
+const OBJ_BODY = 1, OBJ_JOINT = 3, OBJ_ACTUATOR = 19;
 
 // ---------- estado ----------
 let renderer, scene, camera, controls, root, markers, ground, grid;
-let world = null, eventQueue = null;
+let mjm = null, mjd = null;       // MjModel y MjData de la escena actual
+let files = null;                  // { dir, robot }: dónde quedó el robot en el sistema de archivos de MuJoCo
+let loadCount = 0, forceBuf = null;
 let model = null;               // { name, links: Map, joints: [], rootLink }
 let objects = [];               // objetos libres de la escena
 let cameras = [];               // cámaras montadas en links
@@ -61,9 +63,6 @@ let stepMs = 0;   // profiler: tiempo medio de un paso de física
 // ---------- utilidades de geometría ----------
 const vec = (s, d = [0, 0, 0]) => (s ? s.trim().split(/\s+/).map(Number) : d);
 const quatRPY = ([r, p, y]) => new THREE.Quaternion().setFromEuler(new THREE.Euler(r, p, y, "ZYX"));
-const toR = (v) => ({ x: v.x, y: v.y, z: v.z });
-const toRQ = (q) => ({ x: q.x, y: q.y, z: q.z, w: q.w });
-const fromRQ = (q) => new THREE.Quaternion(q.x, q.y, q.z, q.w);
 
 const debugMaterials = {
   collision: new THREE.MeshBasicMaterial({ color: 0x4ea7fc, wireframe: true, transparent: true, opacity: 0.55 }),
@@ -173,44 +172,29 @@ function hullPoints(object3d, bodyMatrix) {
 }
 
 // ---------- construir el modelo ----------
-/** Arma cuerpos, colisiones y articulaciones a partir del modelo interno (URDF o MJCF). */
-async function buildModel(im, base, profile) {
+/** Arma las piezas que se dibujan y, para un URDF, las formas de colisión que irán al MJCF. */
+async function buildModel(im, base, profile, native) {
   const links = new Map(im.links.map((l) => [l.name, l]));
   const childOf = new Set(im.joints.map((j) => j.child));
-  const byParent = new Map();
-  for (const j of im.joints) { if (!byParent.has(j.parent)) byParent.set(j.parent, []); byParent.get(j.parent).push(j); }
   const rootLink = im.links.find((l) => !childOf.has(l.name))?.name;
   if (!rootLink) throw new Error("El modelo no tiene una pieza raíz.");
   const decomposeParts = profile?.collision?.maxParts ?? 8;
-
-  // Pose de cada pieza en la configuración cero (de la raíz a las puntas).
-  const pose = new Map([[rootLink, { p: new THREE.Vector3(), q: new THREE.Quaternion() }]]);
+  const byParent = new Map();
+  for (const j of im.joints) { if (!byParent.has(j.parent)) byParent.set(j.parent, []); byParent.get(j.parent).push(j); }
   const order = [rootLink];
-  for (let i = 0; i < order.length; i++) {
-    const parent = pose.get(order[i]);
-    for (const j of byParent.get(order[i]) || []) {
-      if (pose.has(j.child)) continue;
-      pose.set(j.child, { p: new THREE.Vector3(...j.pos).applyQuaternion(parent.q).add(parent.p), q: parent.q.clone().multiply(arrQ(j.quat)) });
-      order.push(j.child);
-    }
-  }
+  for (let i = 0; i < order.length; i++) for (const j of byParent.get(order[i]) || []) if (!order.includes(j.child)) order.push(j.child);
 
   const warnings = [...(im.warnings || [])];
-  const floating = new Set(im.joints.filter((j) => j.type === "floating").map((j) => j.child));
-  const out = { name: im.name, links: new Map(), joints: [], allJoints: [], rootLink, mass: 0, floating: floating.size > 0 };
+  const out = { name: im.name, links: new Map(), joints: [], rootLink, mass: 0, native,
+    floating: im.joints.some((j) => j.type === "floating"), shapes: new Map(), gains: new Map() };
   let decomposed = 0;
+  const identity = new THREE.Matrix4();
   for (const name of order) {
-    const l = links.get(name), { p, q } = pose.get(name);
-    // Cuerpo alineado con el mundo en la pose cero; las formas llevan la rotación de la pieza.
-    const fixed = name === rootLink && (params.fixedBase || name === "world");
-    const body = world.createRigidBody((fixed ? RAPIER.RigidBodyDesc.fixed() : RAPIER.RigidBodyDesc.dynamic())
-      .setTranslation(p.x, p.y, p.z).setCanSleep(false));
+    const l = links.get(name);
     const group = new THREE.Group();
-    group.position.copy(p);
     root.add(group);
-    const linkFrame = new THREE.Matrix4().makeRotationFromQuaternion(q);  // marco de la pieza dentro del cuerpo
 
-    // Visual
+    // Visual, en el marco de la pieza (MuJoCo da la pose de ese marco).
     for (const v of l.visuals) {
       try {
         const obj = await shapeObject(v, base);
@@ -222,119 +206,78 @@ async function buildModel(im, base, profile) {
           o.userData.robotVisual = true;
           o.userData.baseOpacity = o.material.opacity ?? 1;
         });
-        const holder = new THREE.Group();
-        holder.applyMatrix4(linkFrame);
         const off = new THREE.Group();
         off.position.set(...v.pos);
         off.quaternion.copy(arrQ(v.quat));
         off.add(obj);
-        holder.add(off);
-        group.add(holder);
+        group.add(off);
       } catch (e) { warnings.push(`${name}: ${e.message}`); }
     }
 
-    // Colisión: envolventes convexas; las mallas cóncavas se parten en varias (decompose.js).
-    const shapes = l.collisions.length ? l.collisions : l.visuals;
-    const colliders = [];
-    for (const s of shapes) {
-      try {
-        const obj = await shapeObject(s, base);
-        const off = new THREE.Group();
-        off.position.set(...s.pos);
-        off.quaternion.copy(arrQ(s.quat));
-        off.add(obj);
-        const { parts } = s.geometry.type === "mesh" ? decompose(triangles(off, linkFrame), decomposeParts) : decompose(triangles(off, linkFrame), 1);
-        if (parts.length > 1) decomposed++;
-        for (const pts of parts) {
-          const cd = RAPIER.ColliderDesc.convexHull(pts);
-          if (!cd) continue;
-          cd.setFriction(params.friction).setRestitution(params.restitution)
-            .setCollisionGroups(groups(G_ROBOT, params.selfCollision ? G_ROBOT | G_WORLD : G_WORLD))
-            .setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS);
-          if (l.inertial?.mass > 0) cd.setDensity(0);
-          const c = world.createCollider(cd, body);
-          c.userData = { link: name };
-          colliders.push(c);
-          try {
-            const vs = [];
-            for (let i = 0; i < pts.length; i += 3) vs.push(new THREE.Vector3(pts[i], pts[i + 1], pts[i + 2]));
-            const hull = new THREE.Mesh(new ConvexGeometry(vs), debugMaterials.collision);
-            hull.userData.layer = "collision";
-            hull.visible = render.collision;
-            group.add(hull);
-          } catch { /* sin malla de depuración */ }
-        }
-      } catch (e) { warnings.push(`${name}: ${e.message}`); }
-    }
-
-    // Masa e inercia (en el marco del cuerpo). Las piezas virtuales llevan una masa mínima.
-    if (l.inertial?.mass > 0) {
-      const com = new THREE.Vector3(...l.inertial.pos).applyQuaternion(q);
-      const frame = q.clone().multiply(arrQ(l.inertial.quat));
-      const [ix, iy, iz] = l.inertial.inertia.map((v) => Math.max(v, 1e-7));
-      body.setAdditionalMassProperties(l.inertial.mass, toR(com), { x: ix, y: iy, z: iz }, toRQ(frame), true);
-    } else if (!colliders.length && !fixed) {
-      body.setAdditionalMassProperties(1e-3, { x: 0, y: 0, z: 0 }, { x: 1e-7, y: 1e-7, z: 1e-7 }, { x: 0, y: 0, z: 0, w: 1 }, true);
-      if (!l.virtual) warnings.push(`${name}: sin masa ni colisión; se le da 1 g`);
+    // Colisión (solo URDF; un MJCF trae las suyas): primitivas tal cual, mallas en partes convexas.
+    if (!native) {
+      const list = [];
+      for (const s of l.collisions.length ? l.collisions : l.visuals) {
+        try {
+          if (s.geometry.type !== "mesh") { list.push({ geometry: s.geometry, pos: s.pos, quat: s.quat }); continue; }
+          const obj = await shapeObject(s, base);
+          const off = new THREE.Group();
+          off.position.set(...s.pos);
+          off.quaternion.copy(arrQ(s.quat));
+          off.add(obj);
+          const { parts } = decompose(triangles(off, identity), decomposeParts);
+          if (parts.length > 1) decomposed++;
+          for (const pts of parts) {
+            if (pts.length < 12) continue;
+            list.push({ points: pts });
+            try {
+              const vs = [];
+              for (let i = 0; i < pts.length; i += 3) vs.push(new THREE.Vector3(pts[i], pts[i + 1], pts[i + 2]));
+              const hull = new THREE.Mesh(new ConvexGeometry(vs), debugMaterials.collision);
+              hull.userData.layer = "collision";
+              hull.visible = render.collision;
+              group.add(hull);
+            } catch { /* sin malla de depuración */ }
+          }
+        } catch (e) { warnings.push(`${name}: ${e.message}`); }
+      }
+      out.shapes.set(name, list);
     }
 
     const com = new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 8), debugMaterials.com);
-    const lc = body.localCom();
-    com.position.set(lc.x, lc.y, lc.z);
     com.userData.layer = "com";
     com.visible = render.com;
     group.add(com);
-    out.mass += l.inertial?.mass > 0 ? l.inertial.mass : colliders.reduce((m, c) => m + c.mass(), 0);
-    out.links.set(name, { name, body, group, q0: q.clone(), p0: p.clone(), colliders, virtual: !!l.virtual });
+    out.links.set(name, { name, group, com, virtual: !!l.virtual, body: -1 });
   }
   if (decomposed) warnings.push(`${decomposed} piezas cóncavas se partieron en varias formas convexas para chocar mejor`);
 
-  // Articulaciones
+  // Articulaciones que se muestran y se mandan.
   for (const j of im.joints) {
-    const parent = out.links.get(j.parent), child = out.links.get(j.child);
-    if (!parent || !child) continue;
-    const cp = pose.get(j.child);
-    // Punto de giro en el mundo (pose cero) y su posición en cada cuerpo (alineados con el mundo).
-    const anchor = new THREE.Vector3(...j.anchor).applyQuaternion(cp.q).add(cp.p);
-    const a1 = anchor.clone().sub(parent.p0), a2 = anchor.clone().sub(child.p0);
-    const axis = new THREE.Vector3(...j.axis).normalize().applyQuaternion(cp.q);
-    const info = { name: j.name, type: j.type, parent: j.parent, child: j.child, a1, a2, axis };
-    out.allJoints.push(info);
-    if (j.type === "floating") continue;   // base flotante: el cuerpo queda libre
-
-    let data;
-    if (j.type === "revolute" || j.type === "continuous") data = RAPIER.JointData.revolute(toR(a1), toR(a2), toR(axis));
-    else if (j.type === "prismatic") data = RAPIER.JointData.prismatic(toR(a1), toR(a2), toR(axis));
-    else if (j.type === "spherical") data = RAPIER.JointData.spherical(toR(a1), toR(a2));
-    else data = RAPIER.JointData.fixed(toR(a1), { x: 0, y: 0, z: 0, w: 1 }, toR(a2), { x: 0, y: 0, z: 0, w: 1 });
-    const limited = (j.type === "revolute" || j.type === "prismatic") && j.lower != null && j.upper != null && j.upper > j.lower;
-    if (limited) { data.limitsEnabled = true; data.limits = [j.lower, j.upper]; }
-    const rj = world.createImpulseJoint(data, parent.body, child.body, true);
-    rj.setContactsEnabled(false);  // las piezas vecinas no chocan entre sí (como MuJoCo)
-    if (j.type === "fixed" || j.type === "spherical") continue;
-
-    const arrow = new THREE.ArrowHelper(axis.clone(), a2.clone(), 0.05, 0xff4fa3, 0.012, 0.008);
+    if (!["revolute", "continuous", "prismatic"].includes(j.type)) continue;
+    const child = out.links.get(j.child);
+    if (!child) continue;
+    const arrow = new THREE.ArrowHelper(new THREE.Vector3(...j.axis).normalize(), new THREE.Vector3(...(j.anchor || [0, 0, 0])), 0.05, 0xff4fa3, 0.012, 0.008);
     arrow.userData.layer = "joints";
     arrow.visible = render.joints;
     child.group.add(arrow);
 
+    const limited = (j.type === "revolute" || j.type === "prismatic") && j.lower != null && j.upper != null && j.upper > j.lower;
     const saved = profile?.actuators?.[j.name] || {};
     const act = j.actuator || {};
     const fmax = saved.fmax ?? act.fmax ?? (j.effort > 0 ? j.effort : 10);
     const kp = saved.kp ?? act.kp ?? fmax * 10;            // fuerza máxima con ~0.1 rad (o m) de error
     const kd = saved.kd ?? act.kd ?? kp * 0.05;
-    rj.configureMotorModel(RAPIER.MotorModel.ForceBased);
-    const driven = j.actuated || !!j.mimic;
-    // Pasiva: sin motor de posición, solo su amortiguación.
-    if (!driven && j.damping > 0) rj.configureMotorVelocity(0, j.damping);
+    if (j.actuated && !j.mimic) out.gains.set(j.name, { kp, kd, fmax });
     out.joints.push({
-      ...info, lower: limited ? j.lower : null, upper: limited ? j.upper : null,
-      effort: j.effort, velocity: j.velocity, rj, kp, kd, fmax,
-      actuated: !!j.actuated, mimic: j.mimic, driven,
-      target: limited ? clamp(0, j.lower, j.upper) : 0, q: 0, qd: 0, force: 0, turns: 0, lastRaw: 0,
+      name: j.name, type: j.type, parent: j.parent, child: j.child,
+      lower: limited ? j.lower : null, upper: limited ? j.upper : null,
+      effort: j.effort, velocity: j.velocity, kp, kd, fmax,
+      actuated: !!j.actuated, mimic: j.mimic, driven: !!j.actuated && !j.mimic,
+      target: limited ? clamp(0, j.lower, j.upper) : 0, q: 0, qd: 0, force: 0,
+      jid: -1, qadr: -1, dadr: -1, aid: -1, servo: false, gear: 1,
     });
   }
-  // De la base a la punta (el orden del árbol), no el del archivo.
   const rank = new Map(order.map((n, i) => [n, i]));
   out.joints.sort((a, b) => rank.get(a.child) - rank.get(b.child));
   const byName = new Map(out.joints.map((j) => [j.name, j]));
@@ -342,36 +285,142 @@ async function buildModel(im, base, profile) {
   return { ...out, warnings };
 }
 
-// ---------- coordenadas de las articulaciones (sensores) ----------
-const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _v = new THREE.Vector3(), _w = new THREE.Vector3();
-function measure(j) {
-  const pb = model.links.get(j.parent).body, cb = model.links.get(j.child).body;
-  _qa.copy(fromRQ(pb.rotation())).invert();
-  if (j.type === "prismatic") {
-    const pp = pb.translation(), cp = cb.translation();
-    _v.copy(j.a2).applyQuaternion(fromRQ(cb.rotation())).add(_w.set(cp.x, cp.y, cp.z));
-    _w.copy(j.a1).applyQuaternion(fromRQ(pb.rotation())).add(new THREE.Vector3(pp.x, pp.y, pp.z));
-    return _v.sub(_w).applyQuaternion(_qa).dot(j.axis);
-  }
-  _qb.copy(_qa).multiply(fromRQ(cb.rotation()));
-  let raw = 2 * Math.atan2(_v.set(_qb.x, _qb.y, _qb.z).dot(j.axis), _qb.w);
-  raw = Math.atan2(Math.sin(raw), Math.cos(raw));
-  if (j.type === "continuous") {  // da vueltas completas: se cuentan
-    if (raw - j.lastRaw > Math.PI) j.turns--;
-    else if (j.lastRaw - raw > Math.PI) j.turns++;
-    j.lastRaw = raw;
-    return raw + j.turns * 2 * Math.PI;
-  }
-  return raw;
+// ---------- MuJoCo ----------
+const fsPath = (...parts) => parts.join("/").replace(/\/+/g, "/");
+function mkdirs(path) { try { mj.FS.mkdirTree(path); } catch { /* ya existe */ } }
+function rmTree(path) {
+  try {
+    for (const name of mj.FS.readdir(path)) {
+      if (name === "." || name === "..") continue;
+      const p = `${path}/${name}`;
+      if (mj.FS.isDir(mj.FS.stat(p).mode)) rmTree(p); else mj.FS.unlink(p);
+    }
+    mj.FS.rmdir(path);
+  } catch { /* nada que borrar */ }
 }
 
-/** Actuador de posición con fuerza máxima: el objetivo efectivo nunca pide más que fmax. */
+const GRAY_PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGOYCQAAmwCarS5ItAAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
+
+/** Un MJCF con todo lo que usa (include, mallas, texturas), copiado al sistema de archivos de MuJoCo. */
+async function writeMJCF(text, url, dir) {
+  const base = url.slice(0, url.lastIndexOf("/") + 1);
+  const seen = new Set();
+  const visit = async (xml) => {
+    const doc = new DOMParser().parseFromString(xml, "text/xml");
+    const compiler = doc.querySelector("compiler");
+    const assetdir = compiler?.getAttribute("assetdir") || "";
+    const meshdir = compiler?.getAttribute("meshdir") ?? assetdir;
+    const texturedir = compiler?.getAttribute("texturedir") ?? assetdir;
+    const wanted = [];
+    for (const el of doc.querySelectorAll("*")) {
+      const tag = el.tagName.toLowerCase();
+      for (const attr of el.getAttributeNames().filter((a) => a.startsWith("file"))) {
+        const file = el.getAttribute(attr);
+        if (tag === "include") wanted.push({ path: file, include: true });
+        else wanted.push({ path: fsPath(tag === "texture" ? texturedir : ["mesh", "skin", "hfield"].includes(tag) ? meshdir : "", file) });
+      }
+    }
+    for (const w of wanted) {
+      const path = fsPath(w.path);
+      if (seen.has(path)) continue;
+      seen.add(path);
+      try {
+        const res = await fetch(base + path);
+        if (!res.ok) {
+          // Una textura que no está no debe tumbar el modelo entero: va un píxel gris en su lugar.
+          if (/\.png$/i.test(path)) { mkdirs(fsPath(dir, path.slice(0, path.lastIndexOf("/") + 1))); mj.FS.writeFile(fsPath(dir, path), GRAY_PNG); }
+          continue;
+        }
+        const buf = new Uint8Array(await res.arrayBuffer());
+        mkdirs(fsPath(dir, path.slice(0, path.lastIndexOf("/") + 1)));
+        mj.FS.writeFile(fsPath(dir, path), buf);
+        if (w.include) await visit(new TextDecoder().decode(buf));
+      } catch { /* MuJoCo dirá cuál falta */ }
+    }
+  };
+  await visit(text);
+}
+
+/** Compila la escena (robot + piso + objetos) y conserva el estado del robot y los objetos si ya había. */
+function compileScene() {
+  const sceneFile = fsPath(files.dir, "cu_scene.xml");
+  mj.FS.writeFile(sceneFile, sceneXML(files.robot, objects, params));
+  const keep = mjd ? Object.fromEntries(model.joints.filter((j) => j.qadr >= 0).map((j) => [j.name, [mjd.qpos[j.qadr], mjd.qvel[j.dadr]]])) : null;
+  const objectPose = mjd ? Object.fromEntries(objects.filter((o) => o.body >= 0).map((o) => [o.id, objectState(o)])) : {};
+  const next = mj.MjModel.from_xml_path(sceneFile);
+  mjd?.delete(); mjm?.delete();
+  mjm = next;
+  mjd = new mj.MjData(mjm);
+  bind();
+  applyPhysics();
+  if (keep) for (const j of model.joints) if (keep[j.name] && j.qadr >= 0) { mjd.qpos[j.qadr] = keep[j.name][0]; mjd.qvel[j.dadr] = keep[j.name][1]; }
+  for (const o of objects) if (objectPose[o.id]) setObjectState(o, objectPose[o.id]);
+  mj.mj_forward(mjm, mjd);
+}
+
+/** Une cada pieza, articulación y objeto con su índice en el modelo compilado. */
+function bind() {
+  for (const l of model.links.values()) {
+    l.body = mj.mj_name2id(mjm, OBJ_BODY, l.name);
+    if (l.body >= 0) l.com.position.set(mjm.body_ipos[l.body * 3], mjm.body_ipos[l.body * 3 + 1], mjm.body_ipos[l.body * 3 + 2]);
+  }
+  const actuatorOf = new Map();
+  for (let a = 0; a < mjm.nu; a++) if (mjm.actuator_trntype[a] === 0) actuatorOf.set(mjm.actuator_trnid[a * 2], a);
+  for (const j of model.joints) {
+    j.jid = mj.mj_name2id(mjm, OBJ_JOINT, j.name);
+    j.qadr = j.jid >= 0 ? mjm.jnt_qposadr[j.jid] : -1;
+    j.dadr = j.jid >= 0 ? mjm.jnt_dofadr[j.jid] : -1;
+    j.aid = j.jid >= 0 ? actuatorOf.get(j.jid) ?? -1 : -1;
+    // Servo de posición (ctrl = objetivo) o motor de fuerza (el PD se calcula aquí).
+    j.servo = j.aid >= 0 && mjm.actuator_biastype[j.aid] === 1;
+    if (j.aid >= 0) {
+      j.gear = mjm.actuator_gear[j.aid * 6] || 1;
+      if (j.servo) { j.kp = mjm.actuator_gainprm[j.aid * 10]; j.kd = -mjm.actuator_biasprm[j.aid * 10 + 2]; }
+      if (mjm.actuator_forcelimited[j.aid]) j.fmax = mjm.actuator_forcerange[j.aid * 2 + 1];
+    }
+  }
+  for (const o of objects) {
+    o.body = mj.mj_name2id(mjm, OBJ_BODY, `cu_obj_${o.id}`);
+    const jid = mj.mj_name2id(mjm, OBJ_JOINT, `cu_obj_${o.id}`);
+    o.qadr = jid >= 0 ? mjm.jnt_qposadr[jid] : -1;
+    o.dadr = jid >= 0 ? mjm.jnt_dofadr[jid] : -1;
+  }
+  const robotBodies = new Set([...model.links.values()].map((l) => l.body).filter((b) => b > 0));
+  model.robotGeoms = [];
+  for (let g = 0; g < mjm.ngeom; g++) if (robotBodies.has(mjm.geom_bodyid[g])) model.robotGeoms.push(g);
+  model.bodyLink = new Map([...model.links.values()].filter((l) => l.body >= 0).map((l) => [l.body, l.name]));
+  model.mass = [...robotBodies].reduce((m, b) => m + mjm.body_mass[b], 0);
+}
+
+function applyPhysics() {
+  if (!mjm) return;
+  mjm.opt.gravity[2] = -params.gravity;
+  mjm.opt.timestep = params.timestep;
+  mjm.opt.iterations = Math.max(1, Math.round(params.iterations));
+  // Rebote: MuJoCo no tiene restitución; se aproxima con la amortiguación del contacto (menos, más rebote).
+  const dampratio = Math.max(0.1, 1 - params.restitution);
+  for (let g = 0; g < mjm.ngeom; g++) { mjm.geom_friction[g * 3] = params.friction; mjm.geom_solref[g * 2 + 1] = dampratio; }
+  // Choques del robot consigo mismo (solo en los armados desde URDF; un MJCF trae sus propias reglas).
+  if (model && !model.native) {
+    for (const g of model.robotGeoms || []) mjm.geom_conaffinity[g] = params.selfCollision ? SELF_BITS : ROBOT_BITS.conaffinity;
+  }
+}
+
+// ---------- coordenadas de las articulaciones ----------
+function readJoints() {
+  for (const j of model?.joints || []) {
+    if (j.qadr < 0) continue;
+    j.q = mjd.qpos[j.qadr];
+    j.qd = mjd.qvel[j.dadr];
+    j.force = j.aid >= 0 ? mjd.actuator_force[j.aid] * j.gear : mjd.qfrc_actuator[j.dadr];
+  }
+}
+
 function gauss() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
 
+/** El objetivo de cada actuador, con el ruido de control si está activo (como el de MuJoCo). */
 function drive(j) {
-  if (!j.driven) return;
-  // Acoplada: sigue a su articulación maestra (como <mimic> en URDF o <equality joint> en MJCF).
-  if (j.mimic && j.master) j.target = j.mimic.multiplier * j.master.target + j.mimic.offset;
+  if (!j.driven || j.aid < 0) return;
   let target = j.lower != null ? clamp(j.target, j.lower, j.upper) : j.target;
   if (params.noiseScale > 0) {
     const span = j.lower != null ? j.upper - j.lower : (j.type === "prismatic" ? 0.2 : Math.PI);
@@ -381,64 +430,62 @@ function drive(j) {
     target += j.noise * span / 2;
     if (j.lower != null) target = clamp(target, j.lower, j.upper);
   } else j.noise = 0;
-  const reach = j.fmax / Math.max(j.kp, 1e-6);
-  const eff = j.q + clamp(target - j.q, -reach, reach);
-  j.rj.configureMotorPosition(eff, j.kp, j.kd);
-  j.force = clamp(j.kp * (eff - j.q) - j.kd * j.qd, -j.fmax, j.fmax);  // estimada
+  if (j.servo) { mjd.ctrl[j.aid] = target; return; }
+  // Motor de fuerza: PD con fuerza máxima.
+  const force = clamp(j.kp * (target - mjd.qpos[j.qadr]) - j.kd * mjd.qvel[j.dadr], -j.fmax, j.fmax);
+  mjd.ctrl[j.aid] = force / j.gear;
 }
 
 // ---------- escena ----------
-function makeWorld() {
-  if (world) world.free();
-  world = new RAPIER.World({ x: 0, y: 0, z: -params.gravity });
-  world.timestep = params.timestep;
-  world.numSolverIterations = params.iterations;
-  eventQueue = new RAPIER.EventQueue(true);
-  const g = world.createCollider(RAPIER.ColliderDesc.cuboid(5, 5, 0.05).setTranslation(0, 0, -0.05)
-    .setFriction(params.friction).setCollisionGroups(groups(G_WORLD, G_ROBOT | G_WORLD)));
-  g.userData = { ground: true };
-}
-
 function clearScene() {
   for (const l of model?.links.values() || []) root.remove(l.group);
   for (const o of objects) root.remove(o.mesh);
   for (const c of cameras) c.cam.parent?.remove(c.cam);
   model = null; objects = []; cameras = []; activeCamera = null;
+  mjd?.delete(); mjm?.delete(); mjd = null; mjm = null;
 }
 
-function addObject(spec) {
+function objectState(o) {
+  if (o.body < 0 || !mjd) return null;
+  const p = mjd.xpos, q = mjd.xquat, b = o.body;
+  return { pos: [p[b * 3], p[b * 3 + 1], p[b * 3 + 2]], quat: [q[b * 4 + 1], q[b * 4 + 2], q[b * 4 + 3], q[b * 4]] };
+}
+
+function setObjectState(o, s) {
+  if (o.qadr < 0 || !s) return;
+  mjd.qpos.set([...s.pos, s.quat[3], s.quat[0], s.quat[1], s.quat[2]], o.qadr);
+  for (let i = 0; i < 6; i++) mjd.qvel[o.dadr + i] = 0;
+}
+
+function makeObject(spec) {
   const o = { id: spec.id ?? nextObjectId++, shape: spec.shape || "box", size: spec.size || [0.05, 0.05, 0.05],
     mass: spec.mass ?? 0.05, color: spec.color || "#c8a27a", pos: spec.pos || [0.2, 0, 0.1], yaw: spec.yaw || 0,
-    fixed: !!spec.fixed, name: spec.name || "" };
+    fixed: !!spec.fixed, name: spec.name || "", body: -1, qadr: -1, dadr: -1 };
   nextObjectId = Math.max(nextObjectId, o.id + 1);
-  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), o.yaw * Math.PI / 180);
-  const body = world.createRigidBody((o.fixed ? RAPIER.RigidBodyDesc.fixed() : RAPIER.RigidBodyDesc.dynamic())
-    .setTranslation(...o.pos).setRotation(toRQ(q)));
-  let cd, geo;
-  if (o.shape === "sphere") { cd = RAPIER.ColliderDesc.ball(o.size[0]); geo = new THREE.SphereGeometry(o.size[0], 32, 16); }
-  else if (o.shape === "cylinder") {
-    cd = RAPIER.ColliderDesc.cylinder(o.size[1] / 2, o.size[0]).setRotation(toRQ(new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0))));
-    geo = new THREE.CylinderGeometry(o.size[0], o.size[0], o.size[1], 32).rotateX(Math.PI / 2);
-  } else { cd = RAPIER.ColliderDesc.cuboid(o.size[0] / 2, o.size[1] / 2, o.size[2] / 2); geo = new THREE.BoxGeometry(...o.size); }
-  cd.setMass(Math.max(o.mass, 1e-4)).setFriction(params.friction).setRestitution(params.restitution)
-    .setCollisionGroups(groups(G_WORLD, G_ROBOT | G_WORLD)).setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS);
-  o.body = body;
-  o.collider = world.createCollider(cd, body);
-  o.collider.userData = { object: o.id };
+  let geo;
+  if (o.shape === "sphere") geo = new THREE.SphereGeometry(o.size[0], 32, 16);
+  else if (o.shape === "cylinder") geo = new THREE.CylinderGeometry(o.size[0], o.size[0], o.size[1], 32).rotateX(Math.PI / 2);
+  else geo = new THREE.BoxGeometry(...o.size);
   o.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: o.color, roughness: 0.7 }));
   o.mesh.castShadow = o.mesh.receiveShadow = true;
   o.mesh.userData.obj = o;
   root.add(o.mesh);
   objects.push(o);
+  return o;
+}
+
+function addObject(spec) {
+  const o = makeObject(spec);
+  if (mjm) { compileScene(); sync(); }
   return o.id;
 }
 
 function removeObject(id) {
   const o = objects.find((x) => x.id === id);
   if (!o) return;
-  world.removeRigidBody(o.body);
   root.remove(o.mesh);
   objects = objects.filter((x) => x !== o);
+  if (mjm) { compileScene(); sync(); }
 }
 
 function addCamera(spec) {
@@ -447,8 +494,7 @@ function addCamera(spec) {
   const cam = new THREE.PerspectiveCamera(spec.fovy || 60, (spec.width || 640) / (spec.height || 480), 0.005, 20);
   // Pose dentro del link (convención de MuJoCo: mira hacia −z, y hacia arriba). quat [x,y,z,w] o rpy.
   const q = spec.quat ? new THREE.Quaternion(...spec.quat) : quatRPY(spec.rpy || [0, 0, 0]);
-  const holder = new THREE.Group();
-  holder.quaternion.copy(link.q0);
+  const holder = new THREE.Group();   // el grupo de la pieza ya está en su marco
   cam.position.set(...(spec.pos || [0, 0, 0]));
   cam.quaternion.copy(q);
   holder.add(cam);
@@ -460,60 +506,58 @@ function addCamera(spec) {
 function physicsStep() {
   const t0 = performance.now();
   for (const j of model?.joints || []) drive(j);
-  world.step(eventQueue);
+  mj.mj_step(mjm, mjd);
   stepMs = 0.98 * stepMs + 0.02 * (performance.now() - t0);
-  simTime += params.timestep;
-  for (const j of model?.joints || []) {
-    const q = measure(j);
-    j.qd = (q - j.q) / params.timestep;
-    j.q = q;
-  }
+  simTime = mjd.time;
 }
 
 function sync() {
+  if (!mjd) return;
+  const p = mjd.xpos, q = mjd.xquat;
   for (const l of model?.links.values() || []) {
-    const t = l.body.translation(), r = l.body.rotation();
-    l.group.position.set(t.x, t.y, t.z);
-    l.group.quaternion.set(r.x, r.y, r.z, r.w);
+    const b = l.body;
+    if (b < 0) { l.group.visible = false; continue; }
+    l.group.position.set(p[b * 3], p[b * 3 + 1], p[b * 3 + 2]);
+    l.group.quaternion.set(q[b * 4 + 1], q[b * 4 + 2], q[b * 4 + 3], q[b * 4]);
   }
   for (const o of objects) {
-    const t = o.body.translation(), r = o.body.rotation();
-    o.mesh.position.set(t.x, t.y, t.z);
-    o.mesh.quaternion.set(r.x, r.y, r.z, r.w);
+    const b = o.body;
+    if (b < 0) continue;
+    o.mesh.position.set(p[b * 3], p[b * 3 + 1], p[b * 3 + 2]);
+    o.mesh.quaternion.set(q[b * 4 + 1], q[b * 4 + 2], q[b * 4 + 3], q[b * 4]);
   }
+  readJoints();
 }
 
 const MAX_MARKERS = 256;
 function updateContacts() {
   let n = 0, maxForce = 0;
   const linkForce = {}, color = new THREE.Color(), m4 = new THREE.Matrix4();
-  const seen = new Set();
-  const visit = (collider) => {
-    world.contactPairsWith(collider, (other) => {
-      const key = collider.handle < other.handle ? `${collider.handle}-${other.handle}` : `${other.handle}-${collider.handle}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      world.contactPair(collider, other, (m) => {
-        if (m.numSolverContacts() === 0) return;
-        let impulse = 0;
-        for (let i = 0; i < m.numContacts(); i++) impulse += m.contactImpulse(i);
-        const force = impulse / params.timestep;
-        maxForce = Math.max(maxForce, force);
-        for (const c of [collider, other]) if (c.userData?.link) linkForce[c.userData.link] = (linkForce[c.userData.link] || 0) + force;
-        for (let i = 0; i < m.numSolverContacts() && n < MAX_MARKERS; i++, n++) {
-          const p = m.solverContactPoint(i);
-          markers.setMatrixAt(n, m4.makeTranslation(p.x, p.y, p.z));
-          markers.setColorAt(n, color.setHSL(0.33 * (1 - clamp(force / 5, 0, 1)), 0.85, 0.5));
-        }
-      });
-    });
-  };
-  for (const l of model?.links.values() || []) l.colliders.forEach(visit);
-  for (const o of objects) visit(o.collider);
+  const count = Math.min(mjd.ncon, MAX_MARKERS);
+  if (count) {
+    const list = mjd.contact;
+    forceBuf ??= new mj.DoubleBuffer(6);
+    for (let i = 0; i < count; i++) {
+      const c = list.get(i);
+      mj.mj_contactForce(mjm, mjd, i, forceBuf);
+      const force = Math.abs(forceBuf.GetView()[0]);
+      maxForce = Math.max(maxForce, force);
+      for (const g of [c.geom1, c.geom2]) {
+        const link = model.bodyLink.get(mjm.geom_bodyid[g]);
+        if (link) linkForce[link] = (linkForce[link] || 0) + force;
+      }
+      const pos = c.pos;
+      markers.setMatrixAt(n, m4.makeTranslation(pos[0], pos[1], pos[2]));
+      markers.setColorAt(n, color.setHSL(0.33 * (1 - clamp(force / 5, 0, 1)), 0.85, 0.5));
+      n++;
+      c.delete?.();
+    }
+    list.delete();
+  }
   markers.count = n;
   markers.instanceMatrix.needsUpdate = true;
   if (markers.instanceColor) markers.instanceColor.needsUpdate = true;
-  readout = { contacts: n, maxForce, links: linkForce };
+  readout = { contacts: mjd.ncon, maxForce, links: linkForce };
 }
 
 function postState(now) {
@@ -524,21 +568,21 @@ function postState(now) {
     joints: (model?.joints || []).map((j) => ({ name: j.name, q: j.q, qd: j.qd, target: j.target, force: j.force })),
     contacts: readout.contacts, maxForce: readout.maxForce,
     links: Object.entries(readout.links).map(([name, force]) => ({ name, force })),
-    objects: objects.map((o) => { const t = o.body.translation(); return { id: o.id, pos: [t.x, t.y, t.z] }; }),
+    objects: objects.map((o) => ({ id: o.id, pos: objectState(o)?.pos || o.pos })),
   });
 }
 
 function frame(now) {
   const dtWall = Math.min(0.1, (now - (wallLast || now)) / 1000);
   wallLast = now;
-  if (world && model && !paused) {
+  if (mjd && model && !paused) {
     accum += dtWall * speed;
     const t0 = simTime, start = performance.now();
     while (accum >= params.timestep && performance.now() - start < 25) { physicsStep(); accum -= params.timestep; }
     if (accum > params.timestep * 4) accum = 0;  // no alcanza: se desacelera en vez de acumular
     rtf = dtWall > 0 ? 0.9 * rtf + 0.1 * ((simTime - t0) / dtWall) : rtf;
   } else rtf = 0;
-  if (world) { sync(); if (render.contacts) updateContacts(); else { markers.count = 0; readout = { contacts: 0, maxForce: 0, links: {} }; } }
+  if (mjd) { sync(); if (render.contacts) updateContacts(); else { markers.count = 0; readout = { contacts: mjd.ncon, maxForce: 0, links: {} }; } }
   pullDragged();
   controls.update();
   renderer.render(scene, camera);
@@ -574,7 +618,7 @@ function rayFrom(e) {
   raycaster.setFromCamera(pointer, camera);
 }
 function onPointerDown(e) {
-  if (!e.shiftKey || !world) return;
+  if (!e.shiftKey || !mjd) return;
   rayFrom(e);
   const hit = raycaster.intersectObjects(objects.map((o) => o.mesh))[0];
   if (!hit) return;
@@ -586,11 +630,12 @@ function onPointerDown(e) {
 }
 function onPointerMove(e) { if (drag) { rayFrom(e); raycaster.ray.intersectPlane(drag.plane, drag.to); } }
 function pullDragged() {
-  if (!drag || paused) return;
-  const t = drag.obj.body.translation(), local = root.worldToLocal(drag.to.clone());
-  const k = drag.obj.body.mass() * 60;
-  drag.obj.body.resetForces(true);
-  drag.obj.body.addForce({ x: (local.x - t.x) * k, y: (local.y - t.y) * k, z: 0 }, true);
+  for (const o of objects) if (o.pulled) { for (let i = 0; i < 6; i++) mjd.xfrc_applied[o.body * 6 + i] = 0; o.pulled = false; }
+  if (!drag || paused || drag.obj.body < 0) return;
+  const b = drag.obj.body, local = root.worldToLocal(drag.to.clone()), k = mjm.body_mass[b] * 60;
+  mjd.xfrc_applied[b * 6] = (local.x - mjd.xpos[b * 3]) * k;
+  mjd.xfrc_applied[b * 6 + 1] = (local.y - mjd.xpos[b * 3 + 1]) * k;
+  drag.obj.pulled = true;
 }
 
 // ---------- vistas ----------
@@ -675,21 +720,38 @@ window.studio = {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`No se pudo leer ${url}`);
       const text = await res.text();
-      const urdf = /<mujoco[\s>]/.test(text) ? await parseMJCF(text, url) : parseURDF(text);
+      const native = /<mujoco[\s>]/.test(text);
+      const im = native ? await parseMJCF(text, url) : parseURDF(text);
       if (token !== currentLoad) return;
       clearScene();
       Object.assign(params, profile.physics || {});
-      makeWorld();
       simTime = 0;
-      post({ type: "loading", text: `Armando ${urdf.links.filter((l) => !l.virtual).length} piezas…` });
-      const built = await buildModel(urdf, url.slice(0, url.lastIndexOf("/")), profile);
+      post({ type: "loading", text: `Armando ${im.links.filter((l) => !l.virtual).length} piezas…` });
+      const built = await buildModel(im, url.slice(0, url.lastIndexOf("/")), profile, native);
       if (token !== currentLoad) return;
       model = built;
-      for (const c of [...(urdf.cameras || []), ...(profile.cameras || [])]) addCamera(c);
-      for (const o of profile.scene?.objects || []) addObject(o);
-      homeTargets = { ...(urdf.home || {}), ...(profile.home || {}) };
+
+      // Al sistema de archivos de MuJoCo: el MJCF con sus archivos, o el armado desde el URDF.
+      if (files) rmTree(files.dir);
+      const dir = `/model/${++loadCount}`;
+      mkdirs(dir);
+      if (native) {
+        const name = url.slice(url.lastIndexOf("/") + 1);
+        mj.FS.writeFile(fsPath(dir, name), text);
+        await writeMJCF(text, url, dir);
+        files = { dir, robot: name };
+      } else {
+        mj.FS.writeFile(fsPath(dir, "cu_robot.xml"), robotXML(im, model.rootLink, model.shapes, model.gains, params));
+        files = { dir, robot: "cu_robot.xml" };
+      }
+      if (token !== currentLoad) return;
+      post({ type: "loading", text: "Compilando con MuJoCo…" });
+      for (const o of profile.scene?.objects || []) makeObject(o);
+      compileScene();
+
+      for (const c of [...(im.cameras || []), ...(profile.cameras || [])]) addCamera(c);
+      homeTargets = { ...(im.home || {}), ...(profile.home || {}) };
       this.reset(true);
-      sync();
       applyRender();
       frameModel();
       post({
@@ -699,7 +761,7 @@ window.studio = {
           lower: j.lower, upper: j.upper, effort: j.effort, velocity: j.velocity, kp: j.kp, kd: j.kd, fmax: j.fmax,
           actuated: j.actuated, mimic: j.mimic?.joint ?? null })),
         floating: model.floating,
-        fixedJoints: urdf.joints.filter((j) => j.type === "fixed").length,
+        fixedJoints: im.joints.filter((j) => j.type === "fixed").length,
         mass: model.mass,
         cameras: cameras.map((c) => c.name),
         objects: objects.map(({ id, shape, size, mass, color, pos, yaw, fixed, name }) => ({ id, shape, size, mass, color, pos, yaw, fixed, name })),
@@ -707,7 +769,7 @@ window.studio = {
         warnings: built.warnings,
       });
     } catch (e) {
-      post({ type: "error", text: e.message });
+      post({ type: "error", text: typeof e === "number" ? "MuJoCo no pudo compilar el modelo." : e.message });
     }
   },
   setTarget(name, value) { const j = model?.joints.find((x) => x.name === name); if (j?.actuated) j.target = value; },
@@ -722,59 +784,40 @@ window.studio = {
     if (kp != null) j.kp = kp;
     if (kd != null) j.kd = kd;
     if (fmax != null) j.fmax = fmax;
+    if (mjm && j.aid >= 0 && j.servo) {
+      const a = j.aid;
+      mjm.actuator_gainprm[a * 10] = j.kp;
+      mjm.actuator_biasprm[a * 10 + 1] = -j.kp;
+      mjm.actuator_biasprm[a * 10 + 2] = -j.kd;
+      mjm.actuator_forcelimited[a] = 1;
+      mjm.actuator_forcerange[a * 2] = -j.fmax;
+      mjm.actuator_forcerange[a * 2 + 1] = j.fmax;
+    }
   },
   setPhysics(p) {
     Object.assign(params, p);
-    if (!world) return;
-    world.gravity = { x: 0, y: 0, z: -params.gravity };
-    world.timestep = params.timestep;
-    world.numSolverIterations = params.iterations;
-    world.forEachCollider((c) => {
-      c.setFriction(params.friction);
-      c.setRestitution(params.restitution);
-      if (c.userData?.link) c.setCollisionGroups(groups(G_ROBOT, params.selfCollision ? G_ROBOT | G_WORLD : G_WORLD));
-    });
+    applyPhysics();
   },
-  /** Coloca el robot de golpe en sus objetivos (o en la pose de reposo), quieto. Cinemática directa desde la raíz. */
+  /** Coloca el robot de golpe en sus objetivos (o en la pose de reposo), quieto. Los objetos no se mueven. */
   reset(zeroTargets = true) {
-    if (!model) return;
-    const value = new Map();
+    if (!model || !mjd) return;
     for (const j of model.joints) {
       if (zeroTargets) j.target = homeTargets[j.name] ?? (j.lower != null ? clamp(0, j.lower, j.upper) : 0);
     }
     for (const j of model.joints) {
       if (j.mimic && j.master) j.target = j.mimic.multiplier * j.master.target + j.mimic.offset;
-      value.set(j.name, j.lower != null ? clamp(j.target, j.lower, j.upper) : j.target);
+      if (j.qadr < 0) continue;
+      mjd.qpos[j.qadr] = j.lower != null ? clamp(j.target, j.lower, j.upper) : j.target;
+      mjd.qvel[j.dadr] = 0;
     }
-    const byParent = new Map();
-    for (const j of model.allJoints) { if (!byParent.has(j.parent)) byParent.set(j.parent, []); byParent.get(j.parent).push(j); }
-    const rootL = model.links.get(model.rootLink);
-    const pose = new Map([[model.rootLink, { p: rootL.p0.clone(), q: new THREE.Quaternion() }]]);
-    const queue = [model.rootLink];
-    while (queue.length) {
-      const name = queue.shift(), parent = pose.get(name);
-      for (const j of byParent.get(name) || []) {
-        if (pose.has(j.child)) continue;
-        if (j.type === "floating") {   // base flotante: vuelve a su pose inicial
-          pose.set(j.child, { p: model.links.get(j.child).p0.clone(), q: new THREE.Quaternion() });
-        } else {
-          const v = value.get(j.name) ?? 0;
-          const R = (j.type === "revolute" || j.type === "continuous") ? new THREE.Quaternion().setFromAxisAngle(j.axis, v) : new THREE.Quaternion();
-          const local = j.a1.clone().sub(j.a2.clone().applyQuaternion(R));
-          if (j.type === "prismatic") local.add(j.axis.clone().multiplyScalar(v));
-          pose.set(j.child, { p: local.applyQuaternion(parent.q).add(parent.p), q: parent.q.clone().multiply(R) });
-        }
-        queue.push(j.child);
-      }
+    // Base libre: vuelve a su pose inicial.
+    for (let k = 0; k < mjm.njnt; k++) {
+      if (mjm.jnt_type[k] !== 0 || objects.some((o) => o.qadr === mjm.jnt_qposadr[k])) continue;
+      const a = mjm.jnt_qposadr[k], d = mjm.jnt_dofadr[k];
+      for (let i = 0; i < 7; i++) mjd.qpos[a + i] = mjm.qpos0[a + i];
+      for (let i = 0; i < 6; i++) mjd.qvel[d + i] = 0;
     }
-    for (const [name, { p, q }] of pose) {
-      const b = model.links.get(name).body;
-      b.setTranslation(toR(p), true);
-      b.setRotation(toRQ(q), true);
-      b.setLinvel({ x: 0, y: 0, z: 0 }, true);
-      b.setAngvel({ x: 0, y: 0, z: 0 }, true);
-    }
-    for (const j of model.joints) { j.turns = 0; j.lastRaw = 0; j.q = measure(j); j.qd = 0; }
+    mj.mj_forward(mjm, mjd);
     sync();
   },
   /** Imagen JPEG (data URL) de la vista principal o de una cámara montada, para que la IA «mire». */
@@ -806,8 +849,10 @@ window.studio = {
     return format === "png" ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.8);
   },
   resetObjects(list) {
-    for (const o of [...objects]) removeObject(o.id);
-    for (const o of list || []) addObject(o);
+    for (const o of objects) root.remove(o.mesh);
+    objects = [];
+    for (const o of list || []) makeObject(o);
+    if (mjm) { compileScene(); sync(); }
   },
   addObject(spec) { return addObject(spec); },
   removeObject(id) { removeObject(id); },
@@ -820,7 +865,7 @@ window.studio = {
   },
   showCamera(name) { activeCamera = name || null; },
   pause(on) { paused = on; },
-  step(n = 1) { if (!world || !model) return; for (let i = 0; i < n; i++) physicsStep(); sync(); },
+  step(n = 1) { if (!mjd || !model) return; for (let i = 0; i < n; i++) physicsStep(); sync(); },
   setSpeed(x) { speed = x; },
   setMode(m) { mode = m; },
   view(name) { frameModel(name); },
@@ -828,18 +873,16 @@ window.studio = {
   /** Estado completo (articulaciones y objetos) para un keyframe o para copiarlo. */
   /** Dónde está cada pieza (metros, marco de la base del robot): cinemática directa para la IA. */
   linkPositions() {
-    if (!model) return {};
-    const base = model.links.get(model.rootLink)?.body.translation() || { x: 0, y: 0, z: 0 };
-    return Object.fromEntries([...model.links].map(([name, l]) => {
-      const t = l.body.translation();
-      return [name, [t.x - base.x, t.y - base.y, t.z - base.z]];
-    }));
+    if (!model || !mjd) return {};
+    const p = mjd.xpos, rb = model.links.get(model.rootLink)?.body ?? 0;
+    return Object.fromEntries([...model.links].filter(([, l]) => l.body >= 0).map(([name, l]) =>
+      [name, [0, 1, 2].map((i) => p[l.body * 3 + i] - p[rb * 3 + i])]));
   },
   getKeyframe() {
     return {
       time: simTime,
       q: Object.fromEntries((model?.joints || []).map((j) => [j.name, j.q])),
-      objects: objects.map((o) => { const t = o.body.translation(), r = o.body.rotation(); return { id: o.id, pos: [t.x, t.y, t.z], quat: [r.x, r.y, r.z, r.w] }; }),
+      objects: objects.map((o) => ({ id: o.id, ...(objectState(o) || { pos: o.pos, quat: [0, 0, 0, 1] }) })),
     };
   },
   setKeyframe(k) {
@@ -848,12 +891,9 @@ window.studio = {
     this.reset(false);
     for (const s of k.objects || []) {
       const o = objects.find((x) => x.id === s.id);
-      if (!o) continue;
-      o.body.setTranslation({ x: s.pos[0], y: s.pos[1], z: s.pos[2] }, true);
-      o.body.setRotation({ x: s.quat[0], y: s.quat[1], z: s.quat[2], w: s.quat[3] }, true);
-      o.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-      o.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      if (o) setObjectState(o, s);
     }
+    if (mjd) mj.mj_forward(mjm, mjd);
     sync();
   },
   setInsets({ right = 0 }) { if (right !== insetRight) { insetRight = right; resize(); } },
@@ -862,7 +902,7 @@ window.studio = {
 };
 
 try {
-  await RAPIER.init();
+  mj = await loadMujoco();
   setup();
   post({ type: "ready" });
 } catch (e) {
