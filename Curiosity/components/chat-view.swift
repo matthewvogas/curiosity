@@ -61,6 +61,14 @@ struct ChatView: View {
                     .padding(.vertical, Theme.Space.m)
                 }
                 .scrollIndicators(.never)
+                // Los mensajes se desvanecen al llegar arriba y abajo, en lugar de cortarse en seco.
+                .mask {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 28)
+                        Rectangle()
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 16)
+                    }
+                }
                 .onChange(of: items.count) {
                     withAnimation(.snappy) {
                         if isRunning { proxy.scrollTo("thinking", anchor: .bottom) }
