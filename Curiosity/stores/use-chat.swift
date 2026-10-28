@@ -1,12 +1,15 @@
 import AppKit
 import Observation
 
-/// La conversación con la IA que maneja el robot: manda mensajes, corre las herramientas que la IA
-/// pide sobre la simulación y repite hasta que la IA termina.
+/// La conversación con la IA que maneja un robot (simulado o real, según su `ChatBody`): manda mensajes,
+/// corre las herramientas que la IA pide y repite hasta que termina. Lo que mueve un robot real espera
+/// a que la persona lo apruebe en el chat.
 @Observable
 final class UseChat {
     private let settings: UseSettings
-    private let simulation: UseSimulation
+    private let body: ChatBody
+    /// La aprobación que se está esperando (se responde con approve / reject).
+    private var waitingApproval: CheckedContinuation<Bool, Never>?
 
     private(set) var items: [ChatItem] = []
     private(set) var isRunning = false
@@ -20,13 +23,21 @@ final class UseChat {
     private var history: [[String: Any]] = []
     private var task: Task<Void, Never>?
     private var robotName = ""
-    private var robotID = ""
+    private(set) var robotID = ""
 
     private static let maxTurns = 24
 
-    init(settings: UseSettings, simulation: UseSimulation) {
+    init(settings: UseSettings, body: ChatBody) {
         self.settings = settings
-        self.simulation = simulation
+        self.body = body
+    }
+
+    func approve() { answer(true) }
+    func reject() { answer(false) }
+
+    private func answer(_ ok: Bool) {
+        waitingApproval?.resume(returning: ok)
+        waitingApproval = nil
     }
 
     /// Conversación nueva (al cambiar de robot o con «Nueva conversación»). Se guarda al primer mensaje.
@@ -64,18 +75,19 @@ final class UseChat {
             error = "Conecta tu API key en Ajustes para hablar con el robot."
             return
         }
-        guard let model = simulation.model else {
-            error = "Espera a que el robot termine de cargar."
+        guard let system = body.chatSystemPrompt(robotName: robotName) else {
+            error = body.chatNotReady
             return
         }
         error = nil
         items.append(ChatItem(kind: .user(text)))
         history.append(["role": "user", "content": text])
         persist()
-        task = Task { await run(apiKey: key, model: model) }
+        task = Task { await run(apiKey: key, system: system) }
     }
 
     func stop() {
+        answer(false)
         task?.cancel()
         task = nil
         isRunning = false
@@ -84,6 +96,10 @@ final class UseChat {
         for i in items.indices {
             if case .action(let title, let detail, true, _) = items[i].kind {
                 items[i].kind = .action(title: title, detail: detail, running: false, failed: true)
+                interrupted = true
+            }
+            if case .approval(let title, let detail, .pending) = items[i].kind {
+                items[i].kind = .approval(title: title, detail: detail, state: .rejected)
                 interrupted = true
             }
         }
@@ -116,10 +132,9 @@ final class UseChat {
 
     // MARK: - Bucle con herramientas
 
-    private func run(apiKey: String, model: RobotModel) async {
+    private func run(apiKey: String, system: String) async {
         isRunning = true
         defer { isRunning = false; persist() }
-        let system = AgentTools.systemPrompt(model: model, robotName: robotName)
 
         for _ in 0..<Self.maxTurns {
             if Task.isCancelled { return }
@@ -129,7 +144,7 @@ final class UseChat {
                     "model": settings.modelID,
                     "max_tokens": 16000,
                     "system": system,
-                    "tools": AgentTools.definitions,
+                    "tools": body.chatTools,
                     "output_config": ["effort": settings.effort],
                     "messages": history,
                 ]
@@ -152,7 +167,7 @@ final class UseChat {
             case "tool_use":
                 var results: [[String: Any]] = []
                 for block in content where block["type"] as? String == "tool_use" {
-                    results.append(await execute(block, model: model))
+                    results.append(await execute(block))
                     if Task.isCancelled { return }
                 }
                 history.append(["role": "user", "content": results])
@@ -169,15 +184,28 @@ final class UseChat {
         items.append(ChatItem(kind: .notice("Se alcanzó el máximo de pasos seguidos. Pídele que continúe.", isError: false)))
     }
 
-    /// Corre una herramienta y devuelve su tool_result. Muestra el avance en el chat.
-    private func execute(_ block: [String: Any], model: RobotModel) async -> [String: Any] {
+    /// Corre una herramienta y devuelve su tool_result. Muestra el avance en el chat y, si mueve un robot
+    /// real, antes espera la aprobación de la persona.
+    private func execute(_ block: [String: Any]) async -> [String: Any] {
         let id = block["id"] as? String ?? ""
         let name = block["name"] as? String ?? ""
         let input = block["input"] as? [String: Any] ?? [:]
-        let title = AgentTools.title(for: name, input: input)
+        let title = body.chatTitle(name, input)
+
+        if let detail = body.chatApproval(name, input) {
+            items.append(ChatItem(kind: .approval(title: title, detail: detail, state: .pending)))
+            let index = items.count - 1
+            let ok = await withCheckedContinuation { waitingApproval = $0 }
+            if items.indices.contains(index) {
+                items[index].kind = .approval(title: title, detail: detail, state: ok ? .approved : .rejected)
+            }
+            guard ok else {
+                return result(id, text: "La persona no aprobó este movimiento. Pregúntale qué prefiere.", isError: true)
+            }
+        }
+
         items.append(ChatItem(kind: .action(title: title, detail: "", running: true, failed: false)))
         let index = items.count - 1
-
         func finish(_ detail: String, failed: Bool = false) {
             if items.indices.contains(index) {
                 items[index].kind = .action(title: title, detail: detail, running: false, failed: failed)
@@ -185,31 +213,11 @@ final class UseChat {
         }
 
         do {
-            switch name {
-            case "get_state":
-                finish("")
-                return result(id, text: AgentTools.json(currentState(model)))
-
-            case "move_joints":
-                let types = Dictionary(uniqueKeysWithValues: model.joints.map { ($0.name, $0) })
-                var unknown: [String] = []
-                for t in input["targets"] as? [[String: Any]] ?? [] {
-                    guard let joint = t["joint"] as? String, let value = (t["value"] as? NSNumber)?.doubleValue else { continue }
-                    guard let info = types[joint], info.actuated else { unknown.append(joint); continue }
-                    var v = Units.fromDisplay(value, jointType: info.type)
-                    if let lo = info.lower, let hi = info.upper { v = min(hi, max(lo, v)) }
-                    simulation.setTarget(joint, v)
-                }
-                let seconds = min(5, max(0.2, (input["seconds"] as? NSNumber)?.doubleValue ?? 1.5))
-                await simulation.run(seconds: seconds)
-                finish(unknown.isEmpty ? "" : "Sin motor o no existe: \(unknown.joined(separator: ", "))", failed: !unknown.isEmpty)
-                var out = currentState(model)
-                if !unknown.isEmpty { out["unknown_joints"] = unknown }
-                return result(id, text: AgentTools.json(out))
-
-            case "look":
-                let camera = (input["camera"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                let jpeg = try await simulation.capture(camera: camera)
+            switch try await body.chatRun(name, input) {
+            case .text(let text, let problem):
+                finish(problem ?? "", failed: problem != nil)
+                return result(id, text: text)
+            case .image(let jpeg):
                 finish("")
                 items.append(ChatItem(kind: .image(jpeg)))
                 return [
@@ -217,42 +225,11 @@ final class UseChat {
                     "content": [["type": "image", "source": ["type": "base64", "media_type": "image/jpeg",
                                                              "data": jpeg.base64EncodedString()]]],
                 ]
-
-            case "add_object":
-                let size = Units.meters((input["size_cm"] as? [NSNumber] ?? []).map(\.doubleValue))
-                let pos = Units.meters((input["position_cm"] as? [NSNumber] ?? []).map(\.doubleValue))
-                let object = SceneObject(id: 0, shape: input["shape"] as? String ?? "box",
-                                         size: size.isEmpty ? [0.03, 0.03, 0.03] : size,
-                                         mass: ((input["mass_g"] as? NSNumber)?.doubleValue ?? 20) / 1000,
-                                         color: input["color"] as? String ?? "#cccccc",
-                                         pos: pos.count == 3 ? pos : [0.2, 0, 0.1])
-                let newID = try await simulation.addObject(object)
-                finish("")
-                return result(id, text: AgentTools.json(["id": newID]))
-
-            case "remove_object":
-                simulation.removeObject((input["id"] as? NSNumber)?.intValue ?? -1)
-                finish("")
-                return result(id, text: "ok")
-
-            case "reset":
-                simulation.reset()
-                await simulation.run(seconds: 0.3)
-                finish("")
-                return result(id, text: AgentTools.json(currentState(model)))
-
-            default:
-                finish("Herramienta desconocida", failed: true)
-                return result(id, text: "Herramienta desconocida: \(name)", isError: true)
             }
         } catch {
             finish(error.localizedDescription, failed: true)
             return result(id, text: error.localizedDescription, isError: true)
         }
-    }
-
-    private func currentState(_ model: RobotModel) -> [String: Any] {
-        AgentTools.describe(state: simulation.state, model: model, objects: simulation.objects)
     }
 
     private func result(_ id: String, text: String, isError: Bool = false) -> [String: Any] {

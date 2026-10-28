@@ -58,6 +58,9 @@ struct RobotSession: Equatable {
     var target = 0
     var elapsed: Double = 0
     var limit: Double = 0
+    /// En vivo: a dónde va cada articulación y su rango (grados; la pinza de 0 a 100).
+    var targets: [String: Double] = [:]
+    var limits: [String: ClosedRange<Double>] = [:]
 
     var remaining: Double { max(0, limit - elapsed) }
 }

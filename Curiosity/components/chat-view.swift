@@ -16,6 +16,9 @@ struct ChatView: View {
     let onNew: () -> Void
     let onOpenConversation: (UUID) -> Void
     let onDeleteConversation: (UUID) -> Void
+    /// Para el robot real: aprobar o no un movimiento que propone la IA.
+    var onApprove: () -> Void = {}
+    var onReject: () -> Void = {}
 
     @State private var draft = ""
     @State private var showingHistory = false
@@ -50,7 +53,7 @@ struct ChatView: View {
                                         onPick: { onSend($0) }, onOpenSettings: onOpenSettings)
                         }
                         ForEach(items) { item in
-                            ChatRow(item: item).id(item.id)
+                            ChatRow(item: item, onApprove: onApprove, onReject: onReject).id(item.id)
                         }
                         if isRunning { ThinkingRow().id("thinking") }
                         if let error {
@@ -81,6 +84,42 @@ struct ChatView: View {
                          onSend: { onSend(draft); draft = "" }, onStop: onStop)
                 .padding(Theme.Space.m)
         }
+    }
+}
+
+/// Un movimiento del robot real que propone la IA: el comando exacto y la decisión de la persona.
+private struct ApprovalRow: View {
+    let title: String
+    let detail: String
+    let state: ChatItem.ApprovalState
+    let onApprove: () -> Void
+    let onReject: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack {
+                Label(title, systemImage: "hand.raised").font(.callout.weight(.medium))
+                Spacer()
+                switch state {
+                case .pending: EmptyView()
+                case .approved: Text("Aprobado").font(.caption).foregroundStyle(Theme.muted)
+                case .rejected: Text("No aprobado").font(.caption).foregroundStyle(Theme.muted)
+                }
+            }
+            Text(detail).font(.callout.monospacedDigit()).foregroundStyle(Theme.muted)
+                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            if state == .pending {
+                HStack {
+                    Spacer()
+                    Button("No", action: onReject)
+                    Button("Mover", action: onApprove).buttonStyle(.borderedProminent)
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(Theme.Space.m)
+        .background(Theme.fill, in: .rect(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(state == .pending ? Theme.ink.opacity(0.25) : Theme.hairline))
     }
 }
 
@@ -132,6 +171,8 @@ private struct ChatWelcome: View {
 
 private struct ChatRow: View {
     let item: ChatItem
+    let onApprove: () -> Void
+    let onReject: () -> Void
 
     var body: some View {
         switch item.kind {
@@ -166,6 +207,8 @@ private struct ChatRow: View {
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.hairline))
         case .notice(let text, let isError):
             NoticeRow(text: text, isError: isError)
+        case .approval(let title, let detail, let state):
+            ApprovalRow(title: title, detail: detail, state: state, onApprove: onApprove, onReject: onReject)
         }
     }
 }

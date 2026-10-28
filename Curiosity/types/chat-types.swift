@@ -10,10 +10,32 @@ struct ChatItem: Identifiable, Equatable, Codable {
         /// Lo que la IA miró (JPEG).
         case image(Data)
         case notice(String, isError: Bool)
+        /// Un movimiento del robot real que la persona debe aprobar antes de que ocurra.
+        case approval(title: String, detail: String, state: ApprovalState)
     }
+
+    enum ApprovalState: String, Codable { case pending, approved, rejected }
 
     var id = UUID()
     var kind: Kind
+}
+
+/// Con qué habla la IA: el robot simulado o el real. Da las herramientas, el prompt y las corre.
+protocol ChatBody: AnyObject {
+    var chatTools: [[String: Any]] { get }
+    /// nil mientras el robot no está listo para conversar (cargando, desconectado…).
+    func chatSystemPrompt(robotName: String) -> String?
+    var chatNotReady: String { get }
+    func chatTitle(_ name: String, _ input: [String: Any]) -> String
+    /// Lo que la persona tiene que aprobar antes de correr la herramienta (nil: no hace falta).
+    func chatApproval(_ name: String, _ input: [String: Any]) -> String?
+    func chatRun(_ name: String, _ input: [String: Any]) async throws -> ChatToolOutput
+}
+
+/// Lo que devuelve una herramienta: texto para la IA (y un aviso si algo no salió), o una imagen.
+enum ChatToolOutput {
+    case text(String, problem: String? = nil)
+    case image(Data)
 }
 
 /// Una conversación guardada con un robot: lo que se ve y la historia para seguirla con la API.

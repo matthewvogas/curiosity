@@ -468,6 +468,121 @@ class Record(Session):
                 "elapsed": round(time.monotonic() - self.phase_t0, 1), "limit": self.phase_limit}
 
 
+class Live(Session):
+    """El robot en vivo, sin leader: se queda firme en su pose y va hacia los objetivos que mande la app
+    (la persona con los controles, o la IA después de que la persona aprueba), a velocidad limitada.
+    Al terminar vuelve despacio a la pose en que empezó y suelta los motores.
+    Articulaciones en grados (la pinza, de 0 a 100)."""
+
+    kind = "live"
+    FPS = 30
+    SPEED = 40.0         # grados por segundo como máximo
+    GRIPPER_SPEED = 60.0  # unidades (0-100) por segundo
+    MARGIN = 3.0          # grados de margen dentro del rango calibrado
+
+    def __init__(self, msg):
+        super().__init__(msg)
+        self.robot = None
+        self.joints, self.targets, self.limits, self.start_pose = {}, {}, {}, {}
+        self.lock = threading.Lock()
+
+    def control(self, action, payload=None):
+        with self.lock:
+            if action == "targets":
+                for j, v in (payload or {}).items():
+                    if j in self.limits:
+                        lo, hi = self.limits[j]
+                        self.targets[j] = min(hi, max(lo, float(v)))
+            elif action == "home":
+                self.targets = dict(self.start_pose)
+
+    def look(self, width=768):
+        import cv2
+
+        robot = self.robot
+        if robot is None:
+            raise ValueError("El robot no está conectado.")
+        bgr = cv2.cvtColor(robot.cameras["front"].read_latest(), cv2.COLOR_RGB2BGR)
+        bgr = cv2.resize(bgr, (width, int(width * bgr.shape[0] / bgr.shape[1])))
+        ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        return base64.b64encode(buf.tobytes()).decode()
+
+    def run(self):
+        from lerobot.cameras.opencv import OpenCVCameraConfig
+        from lerobot.robots import make_robot_from_config
+        from lerobot.robots.so_follower import SO101FollowerConfig
+
+        cam = self.msg["camera"]
+        cfg = SO101FollowerConfig(port=self.msg["follower_port"], id=self.msg["follower_id"], use_degrees=True,
+                                  cameras={"front": OpenCVCameraConfig(index_or_path=int(cam["index"]), width=int(cam["width"]),
+                                                                       height=int(cam["height"]), fps=int(cam["fps"]))})
+        robot = make_robot_from_config(cfg)
+        try:
+            robot.connect()
+            self.robot = robot
+            for j, c in robot.calibration.items():
+                if j == "gripper":
+                    self.limits[j] = (0.0, 100.0)
+                else:
+                    half = (c.range_max - c.range_min) / 2 * 360 / 4095 - self.MARGIN
+                    self.limits[j] = (-half, half)
+            obs = robot.get_observation()
+            self.start_pose = {j: float(obs[f"{j}.pos"]) for j in JOINTS}
+            command = dict(self.start_pose)
+            with self.lock:
+                self.targets = dict(self.start_pose)
+            self.phase = "running"
+            self._loop(robot, command, until=lambda: self.stop_event.is_set())
+
+            # Al terminar: de vuelta a la pose del principio, despacio, y después se sueltan los motores.
+            self.phase = "returning"
+            with self.lock:
+                self.targets = dict(self.start_pose)
+            deadline = time.monotonic() + 8
+            self._loop(robot, command, until=lambda: time.monotonic() > deadline or self._settled(command))
+        finally:
+            self.robot = None
+            try:
+                if robot.is_connected:
+                    robot.disconnect()
+            except Exception:
+                pass
+
+    def _settled(self, command):
+        with self.lock:
+            return all(abs(command[j] - self.targets[j]) < 0.5 for j in JOINTS)
+
+    def _loop(self, robot, command, until):
+        dt = 1 / self.FPS
+        last_emit = last_frame = 0.0
+        while not until():
+            t = time.perf_counter()
+            with self.lock:
+                targets = dict(self.targets)
+            for j in JOINTS:
+                step = (self.GRIPPER_SPEED if j == "gripper" else self.SPEED) * dt
+                command[j] += max(-step, min(step, targets[j] - command[j]))
+            robot.send_action({f"{j}.pos": command[j] for j in JOINTS})
+            now = time.monotonic()
+            if now - last_emit > 0.2:
+                obs = robot.get_observation()
+                self.joints = joints_of(obs)
+                emit({"event": "live", **self.status(), "active": True})
+                last_emit = now
+            if now - last_frame > 0.25:
+                jpeg = camera_frame(robot)
+                if jpeg:
+                    emit({"event": "frame", "jpeg": jpeg})
+                last_frame = now
+            time.sleep(max(0.0, dt - (time.perf_counter() - t)))
+
+    def status(self):
+        with self.lock:
+            targets = {j: round(v, 1) for j, v in self.targets.items()}
+        return {**super().status(), "joints": self.joints, "targets": targets,
+                "limits": {j: [round(lo, 1), round(hi, 1)] for j, (lo, hi) in self.limits.items()}}
+
+
 def camera_frame(robot):
     """El último cuadro de la cámara del robot, chico y en JPEG (base64), o None."""
     import cv2
@@ -561,7 +676,7 @@ class Rollout(Session):
 current: Session | None = None
 QUERIES = {"hello": cmd_hello, "calibrations": cmd_calibrations, "cameras": cmd_cameras, "snapshot": cmd_snapshot, "preflight": cmd_preflight,
            "datasets": cmd_datasets, "push_dataset": cmd_push_dataset, "delete_dataset": cmd_delete_dataset}
-SESSIONS = {"teleop": Teleop, "record": Record, "rollout": Rollout}
+SESSIONS = {"teleop": Teleop, "record": Record, "rollout": Rollout, "live": Live}
 
 
 def handle(msg: dict) -> dict:
@@ -583,6 +698,15 @@ def handle(msg: dict) -> dict:
         if current is not None and current.active:
             current.control(cmd)
         return {}
+    if cmd in ("live_targets", "live_home"):
+        if not (isinstance(current, Live) and current.active):
+            raise ValueError("El robot no está en vivo.")
+        current.control(cmd.removeprefix("live_"), msg.get("targets"))
+        return {}
+    if cmd == "live_look":
+        if not (isinstance(current, Live) and current.active):
+            raise ValueError("El robot no está en vivo.")
+        return {"jpeg": current.look()}
     if cmd == "validate":
         # Revisa los argumentos sin conectar nada (para probar el puente).
         if msg.get("policy_path"):

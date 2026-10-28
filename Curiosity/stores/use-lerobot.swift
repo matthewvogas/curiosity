@@ -134,6 +134,23 @@ final class UseLeRobot {
         ]) { $1 })
     }
 
+    /// En vivo: el follower se queda firme y va a los objetivos que se le manden (sin leader).
+    func live(_ d: Device) async {
+        await startSession("live", base(d).merging(["camera": camera(d)]) { $1 })
+    }
+
+    func liveTargets(_ targets: [String: Double]) async throws { _ = try await bridge.request("live_targets", ["targets": targets]) }
+    func liveHome() async throws { _ = try await bridge.request("live_home") }
+
+    /// Una foto grande de la cámara mientras está en vivo (para la IA).
+    func liveLook() async throws -> Data {
+        let r = try await bridge.request("live_look")
+        guard let jpeg = (r["jpeg"] as? String).flatMap({ Data(base64Encoded: $0) }) else {
+            throw NSError(domain: "Curiosity", code: 8, userInfo: [NSLocalizedDescriptionKey: "La cámara no entregó imagen."])
+        }
+        return jpeg
+    }
+
     func next() { Task { _ = try? await bridge.request("next") } }
     func redo() { Task { _ = try? await bridge.request("redo") } }
     func stop() { Task { _ = try? await bridge.request("stop") } }
@@ -164,7 +181,7 @@ final class UseLeRobot {
             frame = (e["jpeg"] as? String).flatMap { Data(base64Encoded: $0) }
             return
         }
-        guard ["teleop", "record", "rollout"].contains(kind) else { return }
+        guard ["teleop", "record", "rollout", "live"].contains(kind) else { return }
         var s = RobotSession(kind: kind, phase: e["phase"] as? String ?? "", active: e["active"] as? Bool ?? false)
         s.error = e["error"] as? String
         s.hz = (e["hz"] as? NSNumber)?.doubleValue ?? 0
@@ -173,6 +190,10 @@ final class UseLeRobot {
         s.target = (e["target"] as? NSNumber)?.intValue ?? 0
         s.elapsed = (e["elapsed"] as? NSNumber)?.doubleValue ?? 0
         s.limit = (e["limit"] as? NSNumber)?.doubleValue ?? 0
+        s.targets = (e["targets"] as? [String: NSNumber])?.mapValues(\.doubleValue) ?? [:]
+        s.limits = (e["limits"] as? [String: [NSNumber]] ?? [:]).compactMapValues { v in
+            v.count == 2 && v[0].doubleValue <= v[1].doubleValue ? v[0].doubleValue...v[1].doubleValue : nil
+        }
         if s != session { session = s }
         // Si terminó por un error, que se vea y diga qué hacer.
         if !s.active, let raw = s.error { error = LeRobotErrors.friendly(raw) }

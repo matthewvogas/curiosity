@@ -10,8 +10,12 @@ struct DeviceScreen: View {
     @Environment(UseDatasets.self) private var datasets
     @Environment(UseTraining.self) private var training
     @Environment(UseTasks.self) private var tasks
+    @Environment(UseLiveRobot.self) private var live
+    @Environment(\.liveChat) private var liveChat
 
-    enum Action { case teleop, record, run }
+    enum Action { case teleop, record, run, live }
+    enum Mode: String { case teach, live }
+    @State private var mode: Mode = .teach
     @State private var confirm: Action?
     @State private var showingSettings = false
     @State private var showingHub = false
@@ -36,10 +40,10 @@ struct DeviceScreen: View {
             .sheet(isPresented: $showingHub) { hubSheet }
             .sheet(isPresented: Binding(get: { preflightFor != nil }, set: { if !$0 { preflightFor = nil } })) {
                 PreflightView(
-                    title: preflightFor == .run ? "Antes de probar" : "Antes de grabar",
+                    title: preflightFor == .record ? "Antes de grabar" : preflightFor == .live ? "Antes de conectar" : "Antes de probar",
                     checks: checks, picture: checkPicture, checking: checking,
                     warning: preflightFor.map(message) ?? "",
-                    startTitle: preflightFor == .run ? "Probar en el robot" : "Empezar a grabar",
+                    startTitle: preflightFor == .record ? "Empezar a grabar" : preflightFor == .live ? "Conectar" : "Probar en el robot",
                     onRetry: { if let a = preflightFor { check(a) } },
                     onStart: {
                         let action = preflightFor
@@ -72,7 +76,9 @@ struct DeviceScreen: View {
 
     @ViewBuilder
     private var content: some View {
-        if let s = lerobot.session, s.active, s.kind == "record" {
+        if mode == .live || live.isLive {
+            DeviceLiveScreen(device: device, robotName: deviceName, onConnect: { check(.live) })
+        } else if let s = lerobot.session, s.active, s.kind == "record" {
             RecordingView(session: s, frame: lerobot.frame, onNext: lerobot.next, onRedo: lerobot.redo, onStop: lerobot.stop)
         } else if let s = lerobot.session, s.active, s.kind == "rollout" {
             RunningView(session: s, frame: lerobot.frame, onStop: lerobot.stop)
@@ -140,7 +146,24 @@ struct DeviceScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if device.leaderPort != nil { ToolbarItem(placement: .primaryAction) {
+        ToolbarItem(placement: .principal) {
+            Picker("Modo", selection: Binding(get: { live.isLive ? .live : mode }, set: { mode = $0 })) {
+                Text("Enseñar").tag(Mode.teach)
+                Text("En vivo").tag(Mode.live)
+            }
+            .pickerStyle(.segmented)
+            .disabled(live.isLive || (lerobot.isBusy && !live.isLive))
+            .help("Enseñarle tareas, o controlarlo ahora con el chat y los controles")
+        }
+        if live.isLive {
+            ToolbarItem(placement: .primaryAction) {
+                Button { liveChat?.stop(); live.stop() } label: { Label("Soltar", systemImage: "stop.fill") }
+                    .labelStyle(.titleAndIcon)
+                    .disabled(live.isReturning)
+                    .help("Vuelve despacio a su pose del principio y suelta los motores")
+            }
+        }
+        if device.leaderPort != nil && !live.isLive && mode == .teach { ToolbarItem(placement: .primaryAction) {
             if lerobot.session?.active == true && lerobot.session?.kind == "teleop" {
                 Button { lerobot.stop() } label: { Label("Dejar de mover", systemImage: "stop.fill") }
                     .help("Suelta los motores del follower")
@@ -215,11 +238,13 @@ struct DeviceScreen: View {
             await lerobot.runPolicy(device, modelPath: job.modelPath, task: task?.title ?? job.dataset, seconds: task?.runSeconds ?? 60)
             return
         }
+        if action == .live { await live.start(device); return }
         guard let task = tasks.selected(for: device.id) else {
             if action == .teleop { await lerobot.teleoperate(device) }
             return
         }
         switch action {
+        case .live: await live.start(device)
         case .teleop: await lerobot.teleoperate(device)
         case .record:
             let remaining = max(1, task.episodes - demosRecorded(task))
@@ -299,6 +324,7 @@ struct DeviceScreen: View {
         case .teleop: "¿Mover con el leader?"
         case .record: "¿Empezar a grabar?"
         case .run: "¿Dejar que el robot lo haga solo?"
+        case .live: "¿Conectar en vivo?"
         case nil: ""
         }
     }
@@ -308,6 +334,7 @@ struct DeviceScreen: View {
         case .teleop: "Mover"
         case .record: "Grabar"
         case .run: "Probar en el robot"
+        case .live: "Conectar"
         case nil: "Aceptar"
         }
     }
@@ -316,6 +343,8 @@ struct DeviceScreen: View {
 
     private func message(_ action: Action) -> String {
         switch action {
+        case .live:
+            "El brazo se va a quedar firme en su pose. Solo se mueve con los controles o cuando apruebes lo que propone la IA."
         case .teleop, .record:
             "El follower va a copiar al leader en cuanto se conecte. Pon el leader en una pose parecida a la del follower, con las fuentes encendidas."
         case .run:
