@@ -82,7 +82,6 @@ struct DeviceLiveScreen: View {
 
     private var stage: some View {
         ZStack {
-            Theme.stage.ignoresSafeArea()
             // La cámara en su propio contenedor, centrada en lo que deja libre el panel.
             camera
                 .padding(Theme.Space.xl)
