@@ -35,7 +35,7 @@ private struct TabButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title).font(.callout.weight(selected ? .semibold : .regular))
+            Text(title).font(.callout)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
             .foregroundStyle(selected ? Theme.ink : Theme.muted)

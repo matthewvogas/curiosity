@@ -28,73 +28,94 @@ struct SidebarList: View {
     let onSelectTask: (Device, UUID) -> Void
     let onNewTask: (Device) -> Void
     let onRemoveTask: (UUID) -> Void
+    @State private var collapsed: Set<String> = []
 
     var body: some View {
         // Encabezado y filas comparten los mismos márgenes: la fila empieza donde empieza «Robots»
         // y termina donde termina el +.
         List {
-            SidebarHeader(title: "Simulación", help: "Abrir simulador", onAdd: onAdd)
-                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 2, trailing: 0))
+            SidebarHeader(title: "Simulación", help: "Abrir simulador", collapsed: isCollapsed("sim"), onToggle: { toggle("sim") }, onAdd: onAdd)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 6, trailing: 0))
                 .listRowBackground(Color.clear)
                 .selectionDisabled()
-            ForEach(robots) { robot in
+            if !isCollapsed("sim") { ForEach(robots) { robot in
                 SidebarRow(icon: .robot, title: robot.name, subtitle: origin(robot), selected: robot.id == selectedID) { onSelect(robot) }
-                    .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
+                    .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
                     .listRowBackground(Color.clear)
                     .contextMenu {
                         Button("Mostrar en Finder") { onReveal(robot) }
                         Divider()
                         Button("Quitar de la lista", role: .destructive) { onRemove(robot) }
                     }
-            }
+            } }
 
-            SidebarHeader(title: "Robots conectados", help: "Conectar robot externo", onAdd: onConnect)
-                .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 2, trailing: 0))
+            SidebarHeader(title: "Robots conectados", help: "Conectar robot externo", collapsed: isCollapsed("devices"), onToggle: { toggle("devices") }, onAdd: onConnect)
+                .listRowInsets(EdgeInsets(top: 20, leading: 0, bottom: 6, trailing: 0))
                 .listRowBackground(Color.clear)
                 .selectionDisabled()
-            ForEach(devices) { device in
+            if !isCollapsed("devices") { ForEach(devices) { device in
                 SidebarRow(icon: .link, title: device.name.isEmpty ? (device.guess ?? "SO-101") : device.name,
                            subtitle: !connectedPorts.contains(device.id) ? "Desenchufado"
                                      : device.leaderPort == nil ? "Enchufado" : "Enchufado · con leader",
-                           selected: device.id == selectedDeviceID && selectedTaskID == nil) { onSelectDevice(device) }
-                    .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
+                           selected: device.id == selectedDeviceID && selectedTaskID == nil,
+                           disclosure: isCollapsed(device.id) ? .closed : .open, onDisclose: { toggle(device.id) }) { onSelectDevice(device) }
+                    .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
                     .listRowBackground(Color.clear)
                     .contextMenu {
                         Button("Nueva tarea…") { onNewTask(device) }
                         Divider()
                         Button("Quitar de la lista", role: .destructive) { onRemoveDevice(device) }
                     }
+                if !isCollapsed(device.id) {
                 ForEach(tasks[device.id] ?? []) { task in
                     SidebarRow(icon: icon(task.phase), title: task.title, subtitle: task.summary,
                                selected: task.id == selectedTaskID, compact: true) { onSelectTask(device, task.id) }
                         .padding(.leading, 22)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                        .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
                         .listRowBackground(Color.clear)
                         .contextMenu { Button("Quitar tarea", role: .destructive) { onRemoveTask(task.id) } }
                 }
                 SidebarRow(icon: .add, title: "Nueva tarea", subtitle: nil, selected: false, compact: true, muted: true) { onNewTask(device) }
                     .padding(.leading, 22)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 4, trailing: 0))
+                    .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 8, trailing: 0))
                     .listRowBackground(Color.clear)
-            }
+                }
+            } }
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        .animation(.snappy(duration: 0.2), value: collapsed)
     }
+
+    private func isCollapsed(_ key: String) -> Bool { collapsed.contains(key) }
+    private func toggle(_ key: String) { if collapsed.contains(key) { collapsed.remove(key) } else { collapsed.insert(key) } }
 }
 
 /// Título de grupo con su botón + en bloque, alineado con los bordes de las filas.
 private struct SidebarHeader: View {
     let title: String
     var help = ""
+    let collapsed: Bool
+    let onToggle: () -> Void
     let onAdd: (() -> Void)?
     @State private var hovering = false
+    @State private var hoveringTitle = false
 
     var body: some View {
         HStack {
-            Text(title)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(Theme.muted)
+            Button(action: onToggle) {
+                HStack(spacing: 6) {
+                    Text(title).font(.title3.weight(.semibold))
+                    Icon(name: .chevron, size: 10, weight: .semibold)
+                        .rotationEffect(.degrees(collapsed ? 0 : 90))
+                        .opacity(hoveringTitle || collapsed ? 1 : 0)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.muted)
+            .onHover { hoveringTitle = $0 }
+            .help(collapsed ? "Mostrar" : "Ocultar")
             Spacer()
             if let onAdd { Button(action: onAdd) {
                 Icon(name: .add, size: 14, weight: .semibold)
@@ -118,6 +139,8 @@ private struct SidebarRow: View {
     let selected: Bool
     var compact = false
     var muted = false
+    var disclosure: Disclosure? = nil
+    var onDisclose: (() -> Void)? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -126,13 +149,24 @@ private struct SidebarRow: View {
             HStack(spacing: Theme.Space.s) {
                 Image(systemName: icon.rawValue)
                     .font(.system(size: compact ? 12 : 14))
-                    .symbolVariant(selected ? .fill : .none)
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font((compact ? Font.callout : .body).weight(selected ? .semibold : .regular)).lineLimit(1)
+                    Text(title).font(compact ? .callout : .body).lineLimit(1)
                     if let subtitle { Text(subtitle).font(.caption).foregroundStyle(Theme.muted).lineLimit(1) }
                 }
                 Spacer(minLength: 0)
+                if let disclosure, let onDisclose {
+                    Button(action: onDisclose) {
+                        Icon(name: .chevron, size: 10, weight: .semibold)
+                            .rotationEffect(.degrees(disclosure == .open ? 90 : 0))
+                            .frame(width: 18, height: 18)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.muted)
+                    .opacity(hovering || disclosure == .closed ? 1 : 0)
+                    .help(disclosure == .open ? "Ocultar tareas" : "Mostrar tareas")
+                }
             }
             .foregroundStyle(muted ? Theme.muted : Theme.ink)
             .padding(.horizontal, 6)
@@ -147,6 +181,8 @@ private struct SidebarRow: View {
         .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
+
+enum Disclosure { case open, closed }
 
 private func icon(_ phase: TaskPhase) -> IconName {
     switch phase {
