@@ -20,6 +20,7 @@ struct CuriosityApp: App {
     @State private var lerobot: UseLeRobot
     @State private var datasets: UseDatasets
     @State private var training: UseTraining
+    @State private var tasks = UseTasks()
 
     init() {
         let settings = UseSettings()
@@ -57,6 +58,7 @@ struct CuriosityApp: App {
                 .environment(lerobot)
                 .environment(datasets)
                 .environment(training)
+                .environment(tasks)
                 .frame(minWidth: 1000, minHeight: 640)
         }
         .defaultSize(width: 1440, height: 900)
