@@ -12,15 +12,15 @@ struct AddRobotScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                Text("Agregar un robot").font(.title2.weight(.semibold))
+                Text("Abrir simulador").font(.title2.weight(.semibold))
                 Text("Cualquier robot en URDF o MJCF: brazos, pinzas, manos, cuadrúpedos, humanoides.")
                     .font(.callout).foregroundStyle(Theme.muted)
             }
 
             VStack(spacing: Theme.Space.s) {
-                ForEach(robots.robots.filter { $0.source == .bundled }) { robot in
+                ForEach(robots.included) { robot in
                     OptionCard(icon: .robot, title: robot.name, detail: robot.summary, badge: "Incluido") {
-                        robots.selectedID = robot.id
+                        robots.addIncluded(robot)
                         dismiss()
                     }
                 }

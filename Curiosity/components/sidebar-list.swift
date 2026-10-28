@@ -1,22 +1,26 @@
 import SwiftUI
 
-/// Barra lateral: la biblioteca de robots. La fila elegida apenas se marca (≈6 %), como WhatsApp.
+/// Barra lateral: mis robots para simular y mis robots físicos. Empieza vacía; cada sección tiene su +.
+/// La fila elegida apenas se marca (≈6 %), como WhatsApp.
 struct SidebarList: View {
     let robots: [Robot]
     let selectedID: String?
     let devices: [Device]
+    let connectedPorts: [String]
     let selectedDeviceID: String?
     let onSelect: (Robot) -> Void
     let onSelectDevice: (Device) -> Void
     let onAdd: () -> Void
+    let onConnect: () -> Void
     let onRemove: (Robot) -> Void
+    let onRemoveDevice: (Device) -> Void
     let onReveal: (Robot) -> Void
 
     var body: some View {
         // Encabezado y filas comparten los mismos márgenes: la fila empieza donde empieza «Robots»
         // y termina donde termina el +.
         List {
-            SidebarHeader(title: "Robots", onAdd: onAdd)
+            SidebarHeader(title: "Simulación", help: "Abrir simulador", onAdd: onAdd)
                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 2, trailing: 0))
                 .listRowBackground(Color.clear)
                 .selectionDisabled()
@@ -26,24 +30,22 @@ struct SidebarList: View {
                     .listRowBackground(Color.clear)
                     .contextMenu {
                         Button("Mostrar en Finder") { onReveal(robot) }
-                        if robot.source != .bundled {
-                            Divider()
-                            Button("Quitar de la biblioteca", role: .destructive) { onRemove(robot) }
-                        }
+                        Divider()
+                        Button("Quitar de la lista", role: .destructive) { onRemove(robot) }
                     }
             }
 
-            if !devices.isEmpty {
-                SidebarHeader(title: "Conectados", onAdd: nil)
-                    .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 2, trailing: 0))
+            SidebarHeader(title: "Robots reales", help: "Conectar robot externo", onAdd: onConnect)
+                .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 2, trailing: 0))
+                .listRowBackground(Color.clear)
+                .selectionDisabled()
+            ForEach(devices) { device in
+                SidebarRow(icon: .link, title: device.name.isEmpty ? (device.guess ?? "SO-101") : device.name,
+                           subtitle: connectedPorts.contains(device.id) ? "Enchufado · USB" : "Desenchufado",
+                           selected: device.id == selectedDeviceID) { onSelectDevice(device) }
+                    .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
                     .listRowBackground(Color.clear)
-                    .selectionDisabled()
-                ForEach(devices) { device in
-                    SidebarRow(icon: .link, title: device.name.isEmpty ? (device.guess ?? "Robot USB") : device.name,
-                               subtitle: "USB · \(device.portName)", selected: device.id == selectedDeviceID) { onSelectDevice(device) }
-                        .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
-                        .listRowBackground(Color.clear)
-                }
+                    .contextMenu { Button("Quitar de la lista", role: .destructive) { onRemoveDevice(device) } }
             }
         }
         .listStyle(.sidebar)
@@ -54,6 +56,7 @@ struct SidebarList: View {
 /// Título de grupo con su botón + en bloque, alineado con los bordes de las filas.
 private struct SidebarHeader: View {
     let title: String
+    var help = ""
     let onAdd: (() -> Void)?
     @State private var hovering = false
 
@@ -71,7 +74,7 @@ private struct SidebarHeader: View {
             .buttonStyle(.plain)
             .foregroundStyle(hovering ? Theme.ink : Theme.muted)
             .onHover { hovering = $0 }
-            .help("Agregar robot") }
+            .help(help) }
         }
         .padding(.top, Theme.Space.s)
     }

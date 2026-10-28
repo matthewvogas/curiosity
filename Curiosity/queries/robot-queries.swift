@@ -25,7 +25,7 @@ enum RobotQueries {
         }
     }
 
-    /// Robots importados (guardados en Application Support/Curiosity/robots.json).
+    /// Mis robots (Application Support/Curiosity/robots.json): incluidos agregados, de la biblioteca e importados.
     static func imported() -> [Robot] {
         guard let data = try? Data(contentsOf: libraryFile) else { return [] }
         return (try? JSONDecoder().decode([Robot].self, from: data)) ?? []

@@ -1,23 +1,28 @@
 import Foundation
 import Observation
 
-/// Los robots físicos conectados por USB: aparecen solos al enchufarlos (se mira la lista de puertos,
-/// sin abrirlos) y se prueban a pedido (abrir el puerto, buscar motores, cerrarlo). Solo lee: nunca
-/// mueve el robot. Configurar y calibrar los motores se hace con LeRobot en la terminal.
+/// Mis robots físicos (por ahora, el SO-101 por USB). Se agregan a mano desde «Conectar robot externo»;
+/// la app solo mira qué puertos hay enchufados (sin abrirlos) y abre uno únicamente al probarlo.
+/// Solo lee: nunca mueve el robot. Configurar y calibrar los motores se hace con LeRobot en la terminal.
 @Observable
 final class UseDevices {
     enum Probe: Equatable { case idle, running(Double), failed(String) }
 
-    /// Los conectados ahora, con lo que se sabe de cada uno.
-    private(set) var devices: [Device] = []
+    /// Los que agregué (estén o no enchufados ahora).
+    private(set) var devices: [Device] = DeviceQueries.known()
+    /// Puertos USB enchufados ahora.
+    private(set) var connectedPorts: [String] = []
     var selectedID: String?
     private(set) var probe: Probe = .idle
 
-    private var known: [Device] = DeviceQueries.known()
     private var watcher: Task<Void, Never>?
 
     var selected: Device? { devices.first { $0.id == selectedID } }
     var isProbing: Bool { if case .running = probe { true } else { false } }
+    /// Enchufados que todavía no agregué (para «Conectar robot externo»).
+    var available: [String] { connectedPorts.filter { port in !devices.contains { $0.id == port } } }
+
+    func isConnected(_ id: String) -> Bool { connectedPorts.contains(id) }
 
     init() {
         refresh()
@@ -32,26 +37,34 @@ final class UseDevices {
         }
     }
 
-    /// Junta los puertos conectados con lo guardado de cada uno.
     func refresh() {
         let ports = DeviceQueries.connectedPorts()
-        let next = ports.map { port in known.first { $0.id == port } ?? Device(id: port, name: "") }
-        if next != devices { devices = next }
-        if let id = selectedID, !ports.contains(id) { selectedID = nil }
+        if ports != connectedPorts { connectedPorts = ports }
+    }
+
+    func add(port: String) {
+        if !devices.contains(where: { $0.id == port }) {
+            devices.append(Device(id: port, name: ""))
+            DeviceQueries.save(devices)
+        }
+        selectedID = port
+    }
+
+    func remove(_ id: String) {
+        devices.removeAll { $0.id == id }
+        DeviceQueries.save(devices)
+        if selectedID == id { selectedID = nil }
     }
 
     func update(_ id: String, _ change: (inout Device) -> Void) {
-        var d = known.first { $0.id == id } ?? devices.first { $0.id == id } ?? Device(id: id, name: "")
-        change(&d)
-        known.removeAll { $0.id == id }
-        known.append(d)
-        DeviceQueries.save(known)
-        refresh()
+        guard let i = devices.firstIndex(where: { $0.id == id }) else { return }
+        change(&devices[i])
+        DeviceQueries.save(devices)
     }
 
     /// Abre el puerto, busca motores en todos los IDs (0–253) y lo cierra.
     func test(_ id: String) async {
-        guard let device = devices.first(where: { $0.id == id }), !isProbing else { return }
+        guard let device = devices.first(where: { $0.id == id }), isConnected(id), !isProbing else { return }
         probe = .running(0)
         let bus = ServoBus(path: device.id, bus: device.bus, baud: device.baud)
         do {

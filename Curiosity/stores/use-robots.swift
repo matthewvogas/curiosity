@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// La biblioteca de robots: los incluidos, los importados y cuál está abierto.
+/// Mis robots para simular: empieza vacía; se agregan el incluido, los de la biblioteca o un archivo.
 @Observable
 final class UseRobots {
     private(set) var robots: [Robot] = []
@@ -9,15 +9,33 @@ final class UseRobots {
     var selectedID: String? { didSet { UserDefaults.standard.set(selectedID, forKey: "robots.selected") } }
 
     var selected: Robot? { robots.first { $0.id == selectedID } }
+    /// Los robots que vienen con la app (para el catálogo de «Abrir simulador»).
+    let included: [Robot] = RobotQueries.bundled()
 
     init() {
         load()
-        selectedID = UserDefaults.standard.string(forKey: "robots.selected") ?? robots.first?.id
-        if selected == nil { selectedID = robots.first?.id }
+        selectedID = UserDefaults.standard.string(forKey: "robots.selected")
+        if selected == nil { selectedID = nil }
     }
 
     func load() {
-        robots = RobotQueries.bundled() + RobotQueries.imported().sorted { $0.addedAt > $1.addedAt }
+        robots = RobotQueries.imported().sorted { $0.addedAt > $1.addedAt }
+    }
+
+    /// Agrega (o abre, si ya estaba) un robot incluido en la app.
+    func addIncluded(_ robot: Robot) {
+        var mine = RobotQueries.imported()
+        if !mine.contains(where: { $0.id == robot.id }) {
+            var added = robot
+            added.addedAt = .now
+            mine.append(added)
+            do { try RobotQueries.saveImported(mine) } catch {
+                self.error = "No se pudo guardar la lista: \(error.localizedDescription)"
+                return
+            }
+            load()
+        }
+        selectedID = robot.id
     }
 
     /// Importa un URDF o MJCF del disco. Sus mallas se leen desde su carpeta; no se copia nada.
@@ -61,12 +79,12 @@ final class UseRobots {
         selectedID = id
     }
 
+    /// Lo quita de la lista (los archivos descargados se quedan en el disco).
     func remove(_ robot: Robot) {
-        guard robot.source != .bundled else { return }
         let rest = RobotQueries.imported().filter { $0.id != robot.id }
         try? RobotQueries.saveImported(rest)
         load()
-        if selectedID == robot.id { selectedID = robots.first?.id }
+        if selectedID == robot.id { selectedID = nil }
     }
 
     func profile(for robot: Robot) -> [String: Any] {

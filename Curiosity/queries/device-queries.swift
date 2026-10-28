@@ -1,7 +1,7 @@
 import Foundation
 
-/// Los robots físicos conocidos (Application Support/Curiosity/devices.json): nombre, tipo de motores
-/// y la última prueba de cada puerto. Que estén conectados ahora lo dice `SerialPort.available()`.
+/// Mis robots físicos (Application Support/Curiosity/devices.json): nombre y la última prueba de cada
+/// puerto. Que estén enchufados ahora lo dice `connectedPorts()`.
 enum DeviceQueries {
     private static var file: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

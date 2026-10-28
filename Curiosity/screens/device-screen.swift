@@ -10,15 +10,16 @@ struct DeviceScreen: View {
             HardwareTestView(
                 port: device.id,
                 name: Binding(get: { device.name }, set: { v in devices.update(device.id) { $0.name = v } }),
-                placeholder: device.guess ?? "Robot USB",
+                placeholder: device.guess ?? "SO-101",
+                connected: devices.isConnected(device.id),
                 testing: devices.isProbing, progress: progress, result: result, resultIsError: isError, found: device.found,
                 onTest: { Task { await devices.test(device.id) } })
             .frame(maxWidth: 640)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .navigationTitle(device.name.isEmpty ? (device.guess ?? "Robot USB") : device.name)
-        .navigationSubtitle("Conectado por USB · \(device.portName)")
+        .navigationTitle(device.name.isEmpty ? (device.guess ?? "SO-101") : device.name)
+        .navigationSubtitle("\(devices.isConnected(device.id) ? "Enchufado" : "Desenchufado") · \(device.portName)")
         .onChange(of: device.id) { devices.resetProbe() }
     }
 

@@ -6,6 +6,7 @@ struct HardwareTestView: View {
     let port: String
     @Binding var name: String
     let placeholder: String
+    let connected: Bool
     let testing: Bool
     let progress: Double
     let result: String?
@@ -34,11 +35,14 @@ struct HardwareTestView: View {
                     } else if let result {
                         Circle().fill(resultIsError ? Theme.red : found.isEmpty ? Theme.yellow : Theme.green).frame(width: 8, height: 8)
                         Text(result).foregroundStyle(resultIsError ? Theme.red : Theme.ink)
+                    } else if !connected {
+                        Circle().fill(Theme.faint).frame(width: 8, height: 8)
+                        Text("Desenchufado: conéctalo por USB para probarlo").foregroundStyle(Theme.muted)
                     } else {
                         Text("Sin probar").foregroundStyle(Theme.muted)
                     }
                     Spacer()
-                    Button("Probar", action: onTest).buttonStyle(.borderedProminent).disabled(testing)
+                    Button("Probar", action: onTest).buttonStyle(.borderedProminent).disabled(testing || !connected)
                 }
                 ForEach(found) { m in
                     HStack {
