@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Logotipo minimalista de cubo y estrella, blanco</title>
+  <g fill="none" stroke="#FFFFFF" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 785 543 L 785 435 Q 785 417 769 408 L 529 270 Q 512 260 495 270 L 255 408 Q 239 417 239 435 L 239 718 Q 239 737 255 746 L 495 884 Q 512 894 529 884 L 697 787" />
+    <path d="M 253 416 L 495 556 Q 512 566 529 556 L 771 416" />
+    <path d="M 512 565 L 512 884" />
+  </g>
+  <path fill="#FFFFFF" d="M 799 550 C 808 550 809 600 841 632 C 873 664 922 664 922 673 C 922 682 873 682 841 714 C 809 746 808 796 799 796 C 790 796 789 746 757 714 C 725 682 676 682 676 673 C 676 664 725 664 757 632 C 789 600 790 550 799 550 Z" />
+</svg>

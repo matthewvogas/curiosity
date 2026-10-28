@@ -118,7 +118,7 @@ private struct SidebarRow: View {
 
 private func origin(_ robot: Robot) -> String {
     switch robot.source {
-    case .bundled: "Incluido"
+    case .bundled: "Default"
     case .library: robot.summary
     case .file: "Importado"
     }

@@ -16,10 +16,11 @@ struct AddRobotScreen: View {
                 Text("Cualquier robot en URDF o MJCF: brazos, pinzas, manos, cuadrúpedos, humanoides.")
                     .font(.callout).foregroundStyle(Theme.muted)
             }
+            Divider()
 
             VStack(spacing: Theme.Space.s) {
                 ForEach(robots.included) { robot in
-                    OptionCard(icon: .robot, title: robot.name, detail: robot.summary, badge: "Incluido") {
+                    OptionCard(icon: .robot, title: robot.name, detail: robot.summary, badge: "Default") {
                         robots.addIncluded(robot)
                         dismiss()
                     }

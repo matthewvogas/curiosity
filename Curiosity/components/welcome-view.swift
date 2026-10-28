@@ -8,9 +8,10 @@ struct WelcomeView: View {
     var body: some View {
         VStack(spacing: Theme.Space.xl) {
             VStack(spacing: Theme.Space.s) {
-                Image(nsImage: NSApp.applicationIconImage)
+                Image("Logo")
                     .resizable()
                     .frame(width: 72, height: 72)
+                    .foregroundStyle(Theme.ink)
                 Text("Curiosity").font(.largeTitle.weight(.bold))
                 Text("Simula un robot y pídele tareas, o conecta el tuyo.")
                     .font(.body).foregroundStyle(Theme.muted)
