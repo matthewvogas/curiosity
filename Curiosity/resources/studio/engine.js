@@ -662,16 +662,22 @@ function setup() {
 }
 
 // ---------- API para la app ----------
-let currentLoad = null;
+let currentLoad = null, loadQueue = Promise.resolve();
 window.studio = {
-  async load({ url, profile = {} }) {
+  /** Las cargas van en fila (una no puede borrar el mundo mientras otra lo arma) y se salta la que ya quedó vieja. */
+  load(args) {
     const token = (currentLoad = {});
+    loadQueue = loadQueue.then(() => (token === currentLoad ? this.loadNow(args, token) : null));
+    return loadQueue;
+  },
+  async loadNow({ url, profile = {} }, token) {
     try {
       post({ type: "loading", text: "Leyendo el modelo…" });
       const res = await fetch(url);
       if (!res.ok) throw new Error(`No se pudo leer ${url}`);
       const text = await res.text();
       const urdf = /<mujoco[\s>]/.test(text) ? await parseMJCF(text, url) : parseURDF(text);
+      if (token !== currentLoad) return;
       clearScene();
       Object.assign(params, profile.physics || {});
       makeWorld();
