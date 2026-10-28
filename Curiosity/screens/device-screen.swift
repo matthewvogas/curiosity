@@ -11,8 +11,6 @@ struct DeviceScreen: View {
                 port: device.id,
                 name: Binding(get: { device.name }, set: { v in devices.update(device.id) { $0.name = v } }),
                 placeholder: device.guess ?? "Robot USB",
-                bus: Binding(get: { device.bus }, set: { v in devices.update(device.id) { $0.bus = v; $0.baud = v.defaultBaud } }),
-                baud: Binding(get: { device.baud }, set: { v in devices.update(device.id) { $0.baud = v } }),
                 testing: devices.isProbing, progress: progress, result: result, resultIsError: isError, found: device.found,
                 onTest: { Task { await devices.test(device.id) } })
             .frame(maxWidth: 640)
@@ -30,7 +28,7 @@ struct DeviceScreen: View {
         if case .failed(let m) = devices.probe { return m }
         guard let at = device.probedAt else { return nil }
         let when = at.formatted(date: .omitted, time: .shortened)
-        return device.found.isEmpty ? "El puerto abrió, pero no respondió ningún motor (\(when)). Revisa la fuente, el tipo y la velocidad."
+        return device.found.isEmpty ? "El puerto abrió, pero no respondió ningún motor (\(when)). Revisa que el brazo tenga su fuente encendida."
                                     : "Conexión correcta: \(device.found.count) motores respondieron (\(when))."
     }
 

@@ -90,8 +90,7 @@ struct Device: Identifiable, Codable, Equatable {
     var guess: String? {
         guard !found.isEmpty else { return nil }
         let models = Set(found.map(\.modelName))
-        if models == ["STS3215"], found.count == 6 { return "Brazo SO-100 / SO-101" }
-        if models.allSatisfy({ $0.hasPrefix("X") }) { return "Robot con Dynamixel X" }
+        if models == ["STS3215"], found.count == 6 { return "SO-101" }
         return "\(found.count) motores"
     }
 }
