@@ -30,6 +30,35 @@ struct DeviceLiveScreen: View {
                 start
             }
         }
+        .toolbar {
+            if live.isLive {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Section("Cámaras en vivo") {
+                            ForEach(lerobot.cameras) { c in
+                                if c.index == device.cameraIndex {
+                                    Text("\(c.name) · principal")
+                                } else {
+                                    Toggle(c.name, isOn: extraBinding(c.index))
+                                }
+                            }
+                        }
+                        Text("¿No aparece? Conéctala por USB en modo webcam.")
+                    } label: {
+                        Label("Cámaras", systemImage: "video.badge.plus")
+                    }
+                    .help("Agregar o quitar cámaras sin desconectar el robot")
+                }
+            }
+        }
+        .task(id: live.isLive) {
+            // Las cámaras que se enchufen aparecen solas en la lista.
+            while !Task.isCancelled {
+                lerobot.refreshCameras()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+        .onChange(of: device) { live.update(device) }
         .task(id: device.id) {
             let key = "device-" + device.id
             if chat?.robotID != key { chat?.reset(robotName: robotName, robotID: key) }
@@ -86,13 +115,15 @@ struct DeviceLiveScreen: View {
         }
         .padding(Theme.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Mientras esperas para conectar, aparecen solas las cámaras que enchufes.
-        .task {
-            while !Task.isCancelled {
-                lerobot.refreshCameras()
-                try? await Task.sleep(for: .seconds(2))
-            }
-        }
+    }
+
+    /// Activar o quitar una cámara extra; si ya está en vivo, se aplica sin desconectar.
+    private func extraBinding(_ index: Int) -> Binding<Bool> {
+        Binding(get: { device.extras.contains(index) }, set: { on in
+            let next = on ? device.extras + [index] : device.extras.filter { $0 != index }
+            devices.update(device.id) { $0.extraCameras = next }
+            if live.isLive { live.setExtraCameras(next) }
+        })
     }
 
     /// Qué cámaras se ven en vivo: la principal (la de grabar) y las que actives.
@@ -103,9 +134,7 @@ struct DeviceLiveScreen: View {
                 if c.index == device.cameraIndex {
                     Label("\(c.name) · principal", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.muted)
                 } else {
-                    Toggle(c.name, isOn: Binding(
-                        get: { device.extras.contains(c.index) },
-                        set: { on in devices.update(device.id) { $0.extraCameras = on ? $0.extras + [c.index] : $0.extras.filter { $0 != c.index } } }))
+                    Toggle(c.name, isOn: extraBinding(c.index))
                 }
             }
             Text("¿No aparece una? Conéctala por USB en modo webcam; sale aquí sola.")

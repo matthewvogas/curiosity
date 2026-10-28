@@ -147,6 +147,7 @@ final class UseLeRobot {
     }
 
     func liveTargets(_ targets: [String: Double]) async throws { _ = try await bridge.request("live_targets", ["targets": targets]) }
+    func liveCameras(_ indexes: [Int]) async throws { _ = try await bridge.request("live_cameras", ["extra_cameras": indexes]) }
     func liveHome() async throws { _ = try await bridge.request("live_home") }
 
     /// Una foto grande de cada cámara mientras está en vivo (para la IA): [(cámara, JPEG)].

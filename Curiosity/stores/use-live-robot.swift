@@ -44,7 +44,7 @@ final class UseLiveRobot {
         twinLoaded = false
         guard let so101 = RobotQueries.bundled().first(where: { $0.id == "bundled.so101" }), let url = RobotQueries.fileURL(for: so101) else { return }
         var profile = RobotQueries.readProfile(urdfURL: url)
-        profile["objects"] = []   // solo el brazo
+        profile["scene"] = ["objects": []]   // solo el brazo, sin los objetos de la escena
         twin.load(url: SimulationQueries.modelURL(for: so101), profile: profile)
     }
 
@@ -61,6 +61,9 @@ final class UseLiveRobot {
     var joints: [String: Double] { isLive ? lerobot.session?.joints ?? [:] : [:] }
     var targets: [String: Double] { isLive ? (lerobot.session?.targets ?? [:]).merging(outgoing) { $1 } : [:] }
     var limits: [String: ClosedRange<Double>] { isLive ? lerobot.session?.limits ?? [:] : [:] }
+
+    /// Las cámaras extra cambiaron mientras está en vivo (para nombrarlas bien).
+    func update(_ device: Device) { self.device = device }
 
     func start(_ device: Device) async {
         self.device = device
@@ -80,6 +83,11 @@ final class UseLiveRobot {
             flushing = false
             try? await lerobot.liveTargets(batch)
         }
+    }
+
+    /// Cambia las cámaras extra sin desconectar el robot.
+    func setExtraCameras(_ indexes: [Int]) {
+        Task { try? await lerobot.liveCameras(indexes) }
     }
 
     func home() { Task { try? await lerobot.liveHome() } }

@@ -513,6 +513,7 @@ class Live(Session):
         self.robot = None
         self.joints, self.targets, self.limits, self.start_pose = {}, {}, {}, {}
         self.lock = threading.Lock()
+        self.camera_change = None  # nuevas cámaras extra, se aplican en el hilo del robot
 
     def control(self, action, payload=None):
         with self.lock:
@@ -523,6 +524,8 @@ class Live(Session):
                         self.targets[j] = min(hi, max(lo, float(v)))
             elif action == "home":
                 self.targets = dict(self.start_pose)
+            elif action == "cameras":
+                self.camera_change = [int(i) for i in payload or []]
 
     def look(self, width=768):
         """Una foto de cada cámara: [{camera, jpeg}]."""
@@ -571,6 +574,24 @@ class Live(Session):
             except Exception:
                 pass
 
+    def _apply_cameras(self, robot, indexes):
+        """Agrega o quita cámaras extra con el robot conectado. Una que no abre se avisa y se omite."""
+        from lerobot.cameras.opencv import OpenCVCamera, OpenCVCameraConfig
+
+        for key in [k for k in robot.cameras if k != "front"]:
+            try:
+                robot.cameras[key].disconnect()
+            except Exception:
+                pass
+            del robot.cameras[key]
+        for i, index in enumerate(indexes, start=1):
+            cam = OpenCVCamera(OpenCVCameraConfig(index_or_path=index))
+            try:
+                cam.connect()
+                robot.cameras[f"cam{i}"] = cam
+            except Exception as e:
+                self.error = f"La cámara {index} no abrió: {clean(e)}"
+
     def _settled(self, command):
         with self.lock:
             return all(abs(command[j] - self.targets[j]) < 0.5 for j in JOINTS)
@@ -582,6 +603,9 @@ class Live(Session):
             t = time.perf_counter()
             with self.lock:
                 targets = dict(self.targets)
+                change, self.camera_change = self.camera_change, None
+            if change is not None:
+                self._apply_cameras(robot, change)
             for j in JOINTS:
                 step = (self.GRIPPER_SPEED if j == "gripper" else self.SPEED) * dt
                 command[j] += max(-step, min(step, targets[j] - command[j]))
@@ -722,10 +746,10 @@ def handle(msg: dict) -> dict:
         if current is not None and current.active:
             current.control(cmd)
         return {}
-    if cmd in ("live_targets", "live_home"):
+    if cmd in ("live_targets", "live_home", "live_cameras"):
         if not (isinstance(current, Live) and current.active):
             raise ValueError("El robot no está en vivo.")
-        current.control(cmd.removeprefix("live_"), msg.get("targets"))
+        current.control(cmd.removeprefix("live_"), msg.get("targets") if cmd != "live_cameras" else msg.get("extra_cameras"))
         return {}
     if cmd == "live_look":
         if not (isinstance(current, Live) and current.active):
