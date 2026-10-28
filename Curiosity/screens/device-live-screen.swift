@@ -14,6 +14,7 @@ struct DeviceLiveScreen: View {
     @Environment(UseLiveRobot.self) private var live
     @Environment(UseSettings.self) private var settings
     @Environment(UseLeRobot.self) private var lerobot
+    @Environment(UseDevices.self) private var devices
     @Environment(\.liveChat) private var chat
     @Environment(\.openSettings) private var openSettings
 
@@ -78,12 +79,41 @@ struct DeviceLiveScreen: View {
             if !device.canRunPolicy {
                 Text("Elige la calibración del follower y la cámara en Ajustes del robot.").font(.callout).foregroundStyle(Theme.muted)
             }
+            cameraPicker
             if let error = lerobot.error {
                 Text(error).font(.callout).foregroundStyle(Theme.red).multilineTextAlignment(.center)
             }
         }
         .padding(Theme.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Mientras esperas para conectar, aparecen solas las cámaras que enchufes.
+        .task {
+            while !Task.isCancelled {
+                lerobot.refreshCameras()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    /// Qué cámaras se ven en vivo: la principal (la de grabar) y las que actives.
+    private var cameraPicker: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            Text("Cámaras").font(.headline)
+            ForEach(lerobot.cameras) { c in
+                if c.index == device.cameraIndex {
+                    Label("\(c.name) · principal", systemImage: "checkmark.circle.fill").foregroundStyle(Theme.muted)
+                } else {
+                    Toggle(c.name, isOn: Binding(
+                        get: { device.extras.contains(c.index) },
+                        set: { on in devices.update(device.id) { $0.extraCameras = on ? $0.extras + [c.index] : $0.extras.filter { $0 != c.index } } }))
+                }
+            }
+            Text("¿No aparece una? Conéctala por USB en modo webcam; sale aquí sola.")
+                .font(.caption).foregroundStyle(Theme.muted)
+        }
+        .padding(Theme.Space.l)
+        .frame(width: 360, alignment: .leading)
+        .background(Theme.fill.opacity(0.5), in: .rect(cornerRadius: 14))
     }
 
     private var stage: some View {

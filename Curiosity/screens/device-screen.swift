@@ -202,6 +202,7 @@ struct DeviceScreen: View {
                 .padding(Theme.Space.l)
         }
         .frame(width: 560, height: 620)
+        .task { lerobot.refreshCameras() }
     }
 
     @ViewBuilder

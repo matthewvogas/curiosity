@@ -63,14 +63,16 @@ final class UseLeRobot {
             let calib = try await bridge.request("calibrations")
             calibrations = Calibrations(robots: calib["robots"] as? [String: [String]] ?? [:],
                                         teleoperators: calib["teleoperators"] as? [String: [String]] ?? [:])
-            let cams = try await bridge.request("cameras")
-            cameras = (cams["cameras"] as? [[String: Any]] ?? []).compactMap { c in
-                guard let i = c["index"] as? Int, let n = c["name"] as? String else { return nil }
-                return CameraInfo(index: i, name: n)
-            }
+            refreshCameras()
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    /// Vuelve a buscar cámaras (por si se enchufó una).
+    func refreshCameras() {
+        let found = CameraQueries.list()
+        if found != cameras { cameras = found }
     }
 
     /// Revisa cada pieza sin mover nada: permiso de cámara, follower, leader (si `withLeader`), poses y cámara.
