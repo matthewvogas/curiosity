@@ -1,44 +1,70 @@
 import SwiftUI
 
-/// Conectar robot externo: elige el puerto USB de tu SO-101 para agregarlo a la lista.
+/// Conectar robot externo: un SO-101 son dos brazos. Se elige cuál es el follower (el que trabaja) y
+/// cuál el leader (el que mueves con la mano para guiarlo).
 struct ConnectDeviceScreen: View {
     @Environment(UseDevices.self) private var devices
     @Environment(\.dismiss) private var dismiss
+    @State private var follower: String?
+    @State private var leader: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                Text("Conectar robot externo").font(.title2.weight(.semibold))
-                Text("Enchufa el SO-101 por USB y enciende su fuente. Aparece aquí en un par de segundos.")
+                Text("Conectar SO-101").font(.title2.weight(.semibold))
+                Text("Enchufa los dos brazos por USB y enciende sus fuentes. Elige cuál es cuál.")
                     .font(.callout).foregroundStyle(Theme.muted)
             }
 
-            VStack(spacing: Theme.Space.s) {
-                if devices.available.isEmpty {
-                    HStack(spacing: Theme.Space.s) {
-                        ProgressView().controlSize(.small)
-                        Text("Buscando robots enchufados…").font(.callout).foregroundStyle(Theme.muted)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Theme.Space.m)
+            if devices.available.isEmpty {
+                HStack(spacing: Theme.Space.s) {
+                    ProgressView().controlSize(.small)
+                    Text("Buscando brazos enchufados…").font(.callout).foregroundStyle(Theme.muted)
                 }
-                ForEach(devices.available, id: \.self) { port in
-                    OptionCard(icon: .link, title: "SO-101",
-                               detail: "USB · \(port.replacingOccurrences(of: "/dev/cu.", with: ""))") {
-                        devices.add(port: port)
-                        dismiss()
+            } else {
+                Form {
+                    Picker("Follower (el que trabaja)", selection: $follower) {
+                        Text("Elige…").tag(String?.none)
+                        ForEach(devices.available, id: \.self) { Text(short($0)).tag(String?.some($0)) }
+                    }
+                    Picker("Leader (el que mueves)", selection: $leader) {
+                        Text("Sin leader").tag(String?.none)
+                        ForEach(devices.available.filter { $0 != follower }, id: \.self) { Text(short($0)).tag(String?.some($0)) }
                     }
                 }
-                OptionCard(icon: .robot, title: "Otros robots", detail: "Koch, LeKiwi, OpenArm y más.",
-                           badge: "Próximamente", enabled: false) {}
+                .formStyle(.grouped)
+                .scrollDisabled(true)
+                .frame(height: 120)
+                Text("¿Cuál es cuál? Desenchufa un brazo: el puerto que desaparece es el suyo.")
+                    .font(.caption).foregroundStyle(Theme.muted)
             }
 
+            OptionCard(icon: .robot, title: "Otros robots", detail: "Koch, LeKiwi, OpenArm y más.",
+                       badge: "Próximamente", enabled: false) {}
+
             HStack {
+                Button("Cancelar") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Cerrar") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Agregar") {
+                    if let follower { devices.add(follower: follower, leader: leader) }
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(follower == nil)
             }
         }
         .padding(Theme.Space.xxl)
-        .frame(width: 480)
+        .frame(width: 500)
+        .onChange(of: devices.available) {
+            if follower == nil, let first = devices.available.first { follower = first }
+            if leader == nil { leader = devices.available.first { $0 != follower } }
+        }
+        .onAppear {
+            follower = devices.available.first
+            leader = devices.available.first { $0 != follower }
+        }
     }
+
+    private func short(_ port: String) -> String { port.replacingOccurrences(of: "/dev/cu.", with: "") }
 }

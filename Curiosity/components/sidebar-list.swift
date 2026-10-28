@@ -41,7 +41,8 @@ struct SidebarList: View {
                 .selectionDisabled()
             ForEach(devices) { device in
                 SidebarRow(icon: .link, title: device.name.isEmpty ? (device.guess ?? "SO-101") : device.name,
-                           subtitle: connectedPorts.contains(device.id) ? "Enchufado · USB" : "Desenchufado",
+                           subtitle: !connectedPorts.contains(device.id) ? "Desenchufado"
+                                     : device.leaderPort == nil ? "Enchufado" : "Enchufado · con leader",
                            selected: device.id == selectedDeviceID) { onSelectDevice(device) }
                     .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
                     .listRowBackground(Color.clear)

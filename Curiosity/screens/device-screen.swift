@@ -63,7 +63,11 @@ struct DeviceScreen: View {
         }
         .onChange(of: device.id) { devices.resetProbe(); snapshot = nil }
         .confirmationDialog(confirmTitle, isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } })) {
-            Button(confirmButton) { Task { await startConfirmed() } }
+            Button(confirmButton) {
+                // El diálogo pone `confirm` en nil al cerrarse: se guarda la acción antes.
+                let action = confirm
+                Task { await startConfirmed(action) }
+            }
         } message: {
             Text(confirmMessage)
         }
@@ -119,8 +123,8 @@ struct DeviceScreen: View {
 
     // MARK: - Acciones
 
-    private func startConfirmed() async {
-        switch confirm {
+    private func startConfirmed(_ action: Tab?) async {
+        switch action {
         case .teleop: await lerobot.teleoperate(device)
         case .record:
             guard AppPaths.isValidName(dataset) else { return }
@@ -129,7 +133,6 @@ struct DeviceScreen: View {
         case .run: await lerobot.runPolicy(device, modelPath: modelPath, task: runTask, seconds: runSeconds)
         default: break
         }
-        confirm = nil
     }
 
     private func startTraining() {

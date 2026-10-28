@@ -19,8 +19,10 @@ final class UseDevices {
 
     var selected: Device? { devices.first { $0.id == selectedID } }
     var isProbing: Bool { if case .running = probe { true } else { false } }
-    /// Enchufados que todavía no agregué (para «Conectar robot externo»).
-    var available: [String] { connectedPorts.filter { port in !devices.contains { $0.id == port } } }
+    /// Enchufados que todavía no son parte de ningún robot (ni follower ni leader).
+    var available: [String] {
+        connectedPorts.filter { port in !devices.contains { $0.id == port || $0.leaderPort == port } }
+    }
 
     func isConnected(_ id: String) -> Bool { connectedPorts.contains(id) }
 
@@ -42,12 +44,12 @@ final class UseDevices {
         if ports != connectedPorts { connectedPorts = ports }
     }
 
-    func add(port: String) {
-        if !devices.contains(where: { $0.id == port }) {
-            devices.append(Device(id: port, name: ""))
-            DeviceQueries.save(devices)
-        }
-        selectedID = port
+    /// Agrega un SO-101: el follower (el que trabaja) y, si hay, su leader (el que mueves con la mano).
+    func add(follower: String, leader: String?) {
+        devices.removeAll { $0.id == follower || $0.id == leader }
+        devices.append(Device(id: follower, name: "", leaderPort: leader))
+        DeviceQueries.save(devices)
+        selectedID = follower
     }
 
     func remove(_ id: String) {
