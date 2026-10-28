@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Agregar un robot: uno incluido, un URDF del disco o (pronto) uno físico o de la biblioteca online.
+/// Agregar un robot: uno incluido o un URDF del disco.
 struct AddRobotScreen: View {
     @Environment(UseRobots.self) private var robots
     @Environment(\.dismiss) private var dismiss
@@ -26,10 +26,6 @@ struct AddRobotScreen: View {
                            detail: "Elige el archivo .urdf; sus mallas (STL, OBJ o DAE) se leen desde su carpeta.") {
                     importing = true
                 }
-                OptionCard(icon: .link, title: "Conectar mi robot", detail: "Tu robot físico por USB (LeRobot), espejo en la simulación.",
-                           badge: "Pronto", enabled: false) {}
-                OptionCard(icon: .globe, title: "Biblioteca online", detail: "Cientos de robots listos para simular, sin descargar nada a mano.",
-                           badge: "Pronto", enabled: false) {}
             }
 
             if let error = robots.error {

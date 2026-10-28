@@ -46,12 +46,6 @@ struct SettingsScreen: View {
                 Text("La key se guarda en el Llavero de tu Mac y solo se envía a api.anthropic.com. Consíguela en console.anthropic.com.")
                     .foregroundStyle(Theme.muted)
             }
-
-            Section("Próximamente") {
-                ProviderRow(name: "OpenAI", detail: "GPT para conversar y planear")
-                ProviderRow(name: "Google Gemini", detail: "Gemini Robotics")
-                ProviderRow(name: "Hugging Face", detail: "Modelos de robots: SmolVLA, π0, GR00T")
-            }
         }
         .formStyle(.grouped)
         .frame(width: 560)
@@ -59,18 +53,3 @@ struct SettingsScreen: View {
     }
 }
 
-private struct ProviderRow: View {
-    let name: String
-    let detail: String
-
-    var body: some View {
-        LabeledContent {
-            Text("Pronto").foregroundStyle(Theme.faint)
-        } label: {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(name)
-                Text(detail).font(.caption).foregroundStyle(Theme.muted)
-            }
-        }
-    }
-}

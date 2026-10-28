@@ -48,13 +48,12 @@ private struct SidebarHeader: View {
                 .foregroundStyle(Theme.muted)
             Spacer()
             Button(action: onAdd) {
-                Icon(name: .add, size: 11, weight: .semibold)
-                    .frame(width: 22, height: 22)
-                    .background(hovering ? Theme.selection : Theme.fill, in: .rect(cornerRadius: 6))
-                    .contentShape(.rect(cornerRadius: 6))
+                Icon(name: .add, size: 12, weight: .semibold)
+                    .frame(width: 22, height: 22, alignment: .trailing)
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Theme.muted)
+            .foregroundStyle(hovering ? Theme.ink : Theme.muted)
             .onHover { hovering = $0 }
             .help("Agregar robot")
         }
