@@ -11,12 +11,16 @@ final class UseChat {
     private(set) var items: [ChatItem] = []
     private(set) var isRunning = false
     private(set) var error: String?
+    /// Conversaciones anteriores con este robot (la más reciente primero).
+    private(set) var conversations: [ConversationSummary] = []
+    private(set) var conversationID = UUID()
 
     /// Historia en el formato de la API. Solo se agrega al final (las respuestas van completas,
     /// con sus bloques de pensamiento, como pide la API).
     private var history: [[String: Any]] = []
     private var task: Task<Void, Never>?
     private var robotName = ""
+    private var robotID = ""
 
     private static let maxTurns = 24
 
@@ -25,13 +29,32 @@ final class UseChat {
         self.simulation = simulation
     }
 
-    /// Conversación nueva (al cambiar de robot o con «Nueva conversación»).
-    func reset(robotName: String) {
+    /// Conversación nueva (al cambiar de robot o con «Nueva conversación»). Se guarda al primer mensaje.
+    func reset(robotName: String, robotID: String) {
         stop()
         self.robotName = robotName
+        self.robotID = robotID
+        conversationID = UUID()
         items = []
         history = []
         error = nil
+        conversations = ChatQueries.list(robotID: robotID)
+    }
+
+    /// Retoma una conversación guardada.
+    func open(_ id: UUID) {
+        guard let c = ChatQueries.load(robotID: robotID, id: id) else { return }
+        stop()
+        conversationID = c.id
+        items = c.items
+        history = (try? JSONSerialization.jsonObject(with: c.history) as? [[String: Any]]) ?? []
+        error = nil
+    }
+
+    func delete(_ id: UUID) {
+        ChatQueries.delete(robotID: robotID, id: id)
+        conversations.removeAll { $0.id == id }
+        if id == conversationID { reset(robotName: robotName, robotID: robotID) }
     }
 
     func send(_ text: String) {
@@ -48,6 +71,7 @@ final class UseChat {
         error = nil
         items.append(ChatItem(kind: .user(text)))
         history.append(["role": "user", "content": text])
+        persist()
         task = Task { await run(apiKey: key, model: model) }
     }
 
@@ -56,18 +80,45 @@ final class UseChat {
         task = nil
         isRunning = false
         // Las acciones a medio correr quedan como interrumpidas.
+        var interrupted = false
         for i in items.indices {
             if case .action(let title, let detail, true, _) = items[i].kind {
                 items[i].kind = .action(title: title, detail: detail, running: false, failed: true)
+                interrupted = true
             }
         }
+        closeOpenToolUses()
+        if interrupted { persist() }
+    }
+
+    /// Si se cortó a mitad de una acción, la API necesita su resultado antes del próximo mensaje.
+    private func closeOpenToolUses() {
+        guard let last = history.last, last["role"] as? String == "assistant",
+              let content = last["content"] as? [[String: Any]] else { return }
+        let ids = content.filter { $0["type"] as? String == "tool_use" }.compactMap { $0["id"] as? String }
+        guard !ids.isEmpty else { return }
+        history.append(["role": "user", "content": ids.map {
+            ["type": "tool_result", "tool_use_id": $0, "content": "Interrumpido por la persona.", "is_error": true] as [String: Any]
+        }])
+    }
+
+    /// Guarda la conversación (título = el primer mensaje) y actualiza la lista del historial.
+    private func persist() {
+        guard !robotID.isEmpty, !items.isEmpty else { return }
+        let first = items.lazy.compactMap { if case .user(let t) = $0.kind { t } else { nil } }.first ?? "Conversación"
+        let title = first.count > 60 ? String(first.prefix(57)) + "…" : first
+        let data = (try? JSONSerialization.data(withJSONObject: history)) ?? Data("[]".utf8)
+        let conversation = Conversation(id: conversationID, robotID: robotID, title: title, items: items, history: data)
+        try? ChatQueries.save(conversation)
+        conversations.removeAll { $0.id == conversationID }
+        conversations.insert(ConversationSummary(id: conversationID, title: title, updatedAt: conversation.updatedAt), at: 0)
     }
 
     // MARK: - Bucle con herramientas
 
     private func run(apiKey: String, model: RobotModel) async {
         isRunning = true
-        defer { isRunning = false }
+        defer { isRunning = false; persist() }
         let system = AgentTools.systemPrompt(model: model, robotName: robotName)
 
         for _ in 0..<Self.maxTurns {
@@ -160,7 +211,7 @@ final class UseChat {
                 let camera = (input["camera"] as? String).flatMap { $0.isEmpty ? nil : $0 }
                 let jpeg = try await simulation.capture(camera: camera)
                 finish("")
-                if let image = NSImage(data: jpeg) { items.append(ChatItem(kind: .image(image))) }
+                items.append(ChatItem(kind: .image(jpeg)))
                 return [
                     "type": "tool_result", "tool_use_id": id,
                     "content": [["type": "image", "source": ["type": "base64", "media_type": "image/jpeg",

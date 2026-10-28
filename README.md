@@ -8,7 +8,9 @@ pides tareas en tus palabras: la IA mira la escena, planea y mueve el robot en u
   contactos con fricción y rebote, sensores (posición, velocidad, fuerza, contactos), cámaras montadas en
   el robot, objetos libres, pausa, paso a paso y velocidad.
 - **IA**: Claude con herramientas (`get_state`, `move_joints`, `look`, `add_object`, `remove_object`,
-  `reset`). La API key se guarda en el Llavero.
+  `reset`). La API key se guarda en el Llavero. Las conversaciones se guardan por robot (Historial, en el chat).
+- **Robot físico**: probar la conexión (puerto, Feetech o Dynamixel, qué motores responden), sin mover nada.
+  Configurar, calibrar, teleoperar y entrenar se hace con LeRobot en la terminal.
 - **Robots**: el SO-101 viene incluido; cualquier URDF o MJCF se importa con sus mallas STL, OBJ o DAE; y la
   **biblioteca** trae 67 robots de MuJoCo Menagerie (brazos, pinzas, manos, cuadrúpedos, humanoides, móviles,
   drones) que se descargan con un clic en una versión fija del repositorio y quedan en la Mac.

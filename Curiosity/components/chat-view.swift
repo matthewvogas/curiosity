@@ -8,14 +8,40 @@ struct ChatView: View {
     let hasKey: Bool
     let robotName: String
     let suggestions: [String]
+    let conversations: [ConversationSummary]
+    let currentID: UUID
     let onSend: (String) -> Void
     let onStop: () -> Void
     let onOpenSettings: () -> Void
+    let onNew: () -> Void
+    let onOpenConversation: (UUID) -> Void
+    let onDeleteConversation: (UUID) -> Void
 
     @State private var draft = ""
+    @State private var showingHistory = false
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack {
+                Button { showingHistory.toggle() } label: {
+                    Label("Historial", systemImage: "clock.arrow.circlepath").font(.callout)
+                }
+                .buttonStyle(.borderless)
+                .disabled(conversations.isEmpty)
+                .popover(isPresented: $showingHistory, arrowEdge: .bottom) {
+                    HistoryList(conversations: conversations, currentID: currentID,
+                                onOpen: { onOpenConversation($0); showingHistory = false },
+                                onDelete: onDeleteConversation)
+                }
+                Spacer()
+                Button(action: onNew) { Label("Nueva", systemImage: IconName.clear.rawValue).font(.callout) }
+                    .buttonStyle(.borderless)
+                    .disabled(items.isEmpty)
+            }
+            .foregroundStyle(Theme.muted)
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.top, Theme.Space.m)
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -123,8 +149,8 @@ private struct ChatRow: View {
                     if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(failed ? Theme.red : Theme.faint) }
                 }
             }
-        case .image(let image):
-            Image(nsImage: image)
+        case .image(let jpeg):
+            Image(nsImage: NSImage(data: jpeg) ?? NSImage())
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(maxWidth: 220, alignment: .leading)
@@ -193,4 +219,37 @@ private struct ChatComposer: View {
     }
 
     private var canSend: Bool { enabled && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+}
+
+/// Conversaciones anteriores con el robot: clic para retomarla, clic derecho para borrarla.
+private struct HistoryList: View {
+    let conversations: [ConversationSummary]
+    let currentID: UUID
+    let onOpen: (UUID) -> Void
+    let onDelete: (UUID) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(conversations) { c in
+                    Button { onOpen(c.id) } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(c.title).font(.callout.weight(c.id == currentID ? .semibold : .regular)).lineLimit(1)
+                            Text(c.updatedAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(Theme.muted)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Theme.Space.s)
+                        .padding(.vertical, 6)
+                        .background(c.id == currentID ? Theme.selection : .clear, in: .rect(cornerRadius: Theme.Radius.row))
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu { Button("Borrar conversación", role: .destructive) { onDelete(c.id) } }
+                }
+            }
+            .padding(Theme.Space.s)
+        }
+        .frame(width: 300)
+        .frame(maxHeight: 360)
+    }
 }

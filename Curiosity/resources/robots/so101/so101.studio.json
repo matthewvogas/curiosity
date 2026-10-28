@@ -97,5 +97,9 @@
     "wrist_flex": 0.97,
     "wrist_roll": -0.14,
     "gripper": 0.0
+  },
+  "hardware": {
+    "bus": "feetech",
+    "baud": 1000000
   }
 }

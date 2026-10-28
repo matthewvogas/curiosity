@@ -8,6 +8,7 @@ struct WorkspaceScreen: View {
     @Environment(UseChat.self) private var chat
     @Environment(UseSettings.self) private var settings
     @Environment(UseRobots.self) private var robots
+    @Environment(UseHardware.self) private var hardware
     @Environment(\.openSettings) private var openSettings
 
     enum PanelTab: String, Hashable { case chat, control, simulation, scene }
@@ -15,6 +16,7 @@ struct WorkspaceScreen: View {
     @AppStorage("panel.tab") private var tab: PanelTab = .chat
     @State private var panelVisible = true
     @State private var showingModel = false
+    @State private var showingHardware = false
 
     private static let speeds: [Double] = [0.25, 0.5, 1, 2]
 
@@ -57,7 +59,10 @@ struct WorkspaceScreen: View {
                         ChatView(items: chat.items, isRunning: chat.isRunning, error: chat.error,
                                  hasKey: settings.hasAnthropicKey, robotName: robot.name,
                                  suggestions: suggestions,
-                                 onSend: chat.send, onStop: chat.stop, onOpenSettings: { openSettings() })
+                                 conversations: chat.conversations, currentID: chat.conversationID,
+                                 onSend: chat.send, onStop: chat.stop, onOpenSettings: { openSettings() },
+                                 onNew: { chat.reset(robotName: robot.name, robotID: robot.id) },
+                                 onOpenConversation: chat.open, onDeleteConversation: chat.delete)
                     case .control:
                         JointControls(joints: simulation.model?.joints ?? [], states: simulation.state.joints,
                                       onChange: simulation.setTarget, onClear: simulation.clearControls,
@@ -89,10 +94,16 @@ struct WorkspaceScreen: View {
         .navigationTitle(robot.name)
         .navigationSubtitle(subtitle)
         .toolbar { toolbar }
+        .sheet(isPresented: $showingHardware) { HardwareScreen(robotName: robot.name) }
         .sheet(isPresented: $showingModel) {
             ModelSheet(title: simulation.model?.name ?? robot.name, text: simulation.modelSummary)
         }
-        .onAppear { open() }
+        .onAppear {
+            open()
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["CURIOSITY_OPEN"] == "hardware" { showingHardware = true }
+            #endif
+        }
         .onChange(of: robot.id) { open() }
     }
 
@@ -112,8 +123,10 @@ struct WorkspaceScreen: View {
     }
 
     private func open() {
-        simulation.open(robot, profile: robots.profile(for: robot))
-        chat.reset(robotName: robot.name)
+        let profile = robots.profile(for: robot)
+        simulation.open(robot, profile: profile)
+        hardware.open(robotID: robot.id, robotProfile: profile)
+        chat.reset(robotName: robot.name, robotID: robot.id)
     }
 
     @ToolbarContentBuilder
@@ -165,7 +178,7 @@ struct WorkspaceScreen: View {
         ToolbarSpacer(.fixed)
 
         ToolbarItemGroup(placement: .primaryAction) {
-            Button { chat.reset(robotName: robot.name); tab = .chat } label: {
+            Button { chat.reset(robotName: robot.name, robotID: robot.id); tab = .chat } label: {
                 Label("Nueva conversación", systemImage: IconName.clear.rawValue)
             }
             .keyboardShortcut("n", modifiers: .command)
@@ -176,6 +189,16 @@ struct WorkspaceScreen: View {
             }
             .keyboardShortcut("0", modifiers: [.command, .option])
             .help("Mostrar u ocultar el panel (⌥⌘0)")
+        }
+
+        ToolbarSpacer(.fixed)
+
+        ToolbarItem(placement: .primaryAction) {
+            Button { showingHardware = true } label: {
+                Label("Robot físico", systemImage: IconName.link.rawValue)
+                    .labelStyle(.titleAndIcon)
+            }
+            .help("Probar la conexión con tu robot físico")
         }
 
         ToolbarSpacer(.fixed)
