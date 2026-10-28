@@ -389,6 +389,7 @@ class Record(Session):
             f"--dataset.repo_id={m['repo_id']}",
             f"--dataset.root={m['root']}",
             "--dataset.push_to_hub=false",
+            "--play_sounds=false",  # sin voz («Recording episode…», «Stop recording»…)
             f"--dataset.single_task={m['task']}",
             f"--dataset.num_episodes={int(m['num_episodes'])}",
             f"--dataset.episode_time_s={float(m['episode_time_s'])}",
