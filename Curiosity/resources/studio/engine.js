@@ -26,10 +26,16 @@ import { parseURDF } from "./model-urdf.js";
 import { parseMJCF } from "./model-mjcf.js";
 import { triangles, decompose } from "./decompose.js";
 import { robotXML, sceneXML, ROBOT_BITS, SELF_BITS } from "./mjcf-build.js";
+import { createSkills } from "./skills.js";
+import { partsOf, quatFromEuler, objectQuat, bounds } from "./objects.js";
 
 let mj = null;   // el módulo de MuJoCo
+// macOS (SwiftUI): webkit.messageHandlers. Escritorio (Tauri): la app que contiene el visor, por postMessage.
 const post = (msg) => {
-  try { window.webkit.messageHandlers.studio.postMessage(msg); } catch { /* fuera de la app no hay a quién avisar */ }
+  try {
+    if (window.webkit?.messageHandlers?.studio) window.webkit.messageHandlers.studio.postMessage(msg);
+    else if (window.parent !== window) window.parent.postMessage({ studio: msg }, "*");
+  } catch { /* fuera de la app no hay a quién avisar */ }
 };
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -59,6 +65,9 @@ const params = {
 // Qué se dibuja (panel «Visualización»): como los flags de render de MuJoCo.
 const render = { contacts: true, joints: false, collision: false, com: false, transparent: false, grid: true, shadows: true };
 let stepMs = 0;   // profiler: tiempo medio de un paso de física
+let effectorConfig = null;  // «effector» del perfil (punta y pinza), si lo trae
+// Habilidades (agarrar, dejar…) que se mueven solas en tiempo real; ver skills.js.
+const skills = createSkills({ get: () => ({ mj, mjm, mjd, model, root, cameras }), config: () => effectorConfig });
 
 // ---------- utilidades de geometría ----------
 const vec = (s, d = [0, 0, 0]) => (s ? s.trim().split(/\s+/).map(Number) : d);
@@ -191,8 +200,8 @@ async function buildModel(im, base, profile, native) {
   const identity = new THREE.Matrix4();
   for (const name of order) {
     const l = links.get(name);
+    // Se agrega a la escena en loadNow, solo si esta carga sigue vigente: una vieja no deja piezas sueltas.
     const group = new THREE.Group();
-    root.add(group);
 
     // Visual, en el marco de la pieza (MuJoCo da la pose de ese marco).
     for (const v of l.visuals) {
@@ -282,6 +291,8 @@ async function buildModel(im, base, profile, native) {
   out.joints.sort((a, b) => rank.get(a.child) - rank.get(b.child));
   const byName = new Map(out.joints.map((j) => [j.name, j]));
   for (const j of out.joints) if (j.mimic) j.master = byName.get(j.mimic.joint) || null;
+  // El árbol completo (también las uniones fijas): de cada pieza, su pieza madre.
+  out.parentOf = new Map(im.joints.map((j) => [j.child, j.parent]));
   return { ...out, warnings };
 }
 
@@ -366,13 +377,25 @@ function bind() {
   }
   const actuatorOf = new Map();
   for (let a = 0; a < mjm.nu; a++) if (mjm.actuator_trntype[a] === 0) actuatorOf.set(mjm.actuator_trnid[a * 2], a);
+  // Actuadores sobre un tendón fijo (p. ej. los dedos de la Panda): mueven las articulaciones que el tendón suma.
+  const tendonOf = new Map();   // articulación → { a, coef }
+  for (let a = 0; a < mjm.nu; a++) {
+    if (mjm.actuator_trntype[a] !== 3) continue;   // mjTRN_TENDON
+    const t = mjm.actuator_trnid[a * 2], adr = mjm.tendon_adr[t], num = mjm.tendon_num[t];
+    let coef = 0;
+    const joints = [];
+    for (let w = adr; w < adr + num; w++) if (mjm.wrap_type[w] === 1) { coef += mjm.wrap_prm[w]; joints.push(mjm.wrap_objid[w]); }
+    for (const jid of joints) if (!tendonOf.has(jid)) tendonOf.set(jid, { a, coef });
+  }
   for (const j of model.joints) {
     j.jid = mj.mj_name2id(mjm, OBJ_JOINT, j.name);
     j.qadr = j.jid >= 0 ? mjm.jnt_qposadr[j.jid] : -1;
     j.dadr = j.jid >= 0 ? mjm.jnt_dofadr[j.jid] : -1;
     j.aid = j.jid >= 0 ? actuatorOf.get(j.jid) ?? -1 : -1;
+    j.tendon = 0;
+    if (j.aid < 0 && tendonOf.has(j.jid)) { j.aid = tendonOf.get(j.jid).a; j.tendon = tendonOf.get(j.jid).coef; }
     // Servo de posición (ctrl = objetivo) o motor de fuerza (el PD se calcula aquí).
-    j.servo = j.aid >= 0 && mjm.actuator_biastype[j.aid] === 1;
+    j.servo = j.aid >= 0 && !j.tendon && mjm.actuator_biastype[j.aid] === 1;
     if (j.aid >= 0) {
       j.gear = mjm.actuator_gear[j.aid * 6] || 1;
       if (j.servo) { j.kp = mjm.actuator_gainprm[j.aid * 10]; j.kd = -mjm.actuator_biasprm[j.aid * 10 + 2]; }
@@ -431,6 +454,16 @@ function drive(j) {
     if (j.lower != null) target = clamp(target, j.lower, j.upper);
   } else j.noise = 0;
   if (j.servo) { mjd.ctrl[j.aid] = target; return; }
+  if (j.tendon) {
+    // Por tendón: el largo que da este objetivo (con las acopladas igual) y el control que lo sostiene
+    // (fuerza = g·ctrl + b0 + b1·largo, cero en el equilibrio).
+    const a = j.aid, g = mjm.actuator_gainprm[a * 10], b0 = mjm.actuator_biasprm[a * 10], b1 = mjm.actuator_biasprm[a * 10 + 1];
+    if (!g || !b1) return;
+    let ctrl = -(b0 + b1 * target * j.tendon) / g;
+    if (mjm.actuator_ctrllimited[a]) ctrl = clamp(ctrl, mjm.actuator_ctrlrange[a * 2], mjm.actuator_ctrlrange[a * 2 + 1]);
+    mjd.ctrl[a] = ctrl;
+    return;
+  }
   // Motor de fuerza: PD con fuerza máxima.
   const force = clamp(j.kp * (target - mjd.qpos[j.qadr]) - j.kd * mjd.qvel[j.dadr], -j.fmax, j.fmax);
   mjd.ctrl[j.aid] = force / j.gear;
@@ -438,6 +471,7 @@ function drive(j) {
 
 // ---------- escena ----------
 function clearScene() {
+  skills.cancel("the robot was reloaded");
   for (const l of model?.links.values() || []) root.remove(l.group);
   for (const o of objects) root.remove(o.mesh);
   for (const c of cameras) c.cam.parent?.remove(c.cam);
@@ -460,18 +494,74 @@ function setObjectState(o, s) {
 function makeObject(spec) {
   const o = { id: spec.id ?? nextObjectId++, shape: spec.shape || "box", size: spec.size || [0.05, 0.05, 0.05],
     mass: spec.mass ?? 0.05, color: spec.color || "#c8a27a", pos: spec.pos || [0.2, 0, 0.1], yaw: spec.yaw || 0,
+    euler: Array.isArray(spec.euler) ? spec.euler : null, parts: Array.isArray(spec.parts) && spec.parts.length ? spec.parts : null,
     fixed: !!spec.fixed, name: spec.name || "", body: -1, qadr: -1, dadr: -1 };
   nextObjectId = Math.max(nextObjectId, o.id + 1);
-  let geo;
-  if (o.shape === "sphere") geo = new THREE.SphereGeometry(o.size[0], 32, 16);
-  else if (o.shape === "cylinder") geo = new THREE.CylinderGeometry(o.size[0], o.size[0], o.size[1], 32).rotateX(Math.PI / 2);
-  else geo = new THREE.BoxGeometry(...o.size);
-  o.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: o.color, roughness: 0.7 }));
-  o.mesh.castShadow = o.mesh.receiveShadow = true;
+  // Sin posición (o con drop): se suelta desde un poco más arriba, en un lugar libre.
+  if (spec.drop || !spec.pos) o.pos = dropPosition(o);
+  o.mesh = new THREE.Group();
+  for (const p of partsOf(o)) {
+    let geo;
+    if (p.shape === "sphere") geo = new THREE.SphereGeometry(p.size[0], 32, 16);
+    else if (p.shape === "cylinder") geo = new THREE.CylinderGeometry(p.size[0], p.size[0], p.size[1] ?? p.size[0], 40).rotateX(Math.PI / 2);
+    else if (p.shape === "capsule") geo = new THREE.CapsuleGeometry(p.size[0], p.size[1] ?? p.size[0], 8, 24).rotateX(Math.PI / 2);
+    else geo = new THREE.BoxGeometry(p.size[0], p.size[1] ?? p.size[0], p.size[2] ?? p.size[0]);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.6, metalness: 0.05 }));
+    mesh.position.set(...p.pos);
+    mesh.quaternion.set(...quatFromEuler(p.euler));
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.userData.obj = o;
+    o.mesh.add(mesh);
+  }
+  // Medidas en su propio marco (sin el giro del objeto): para el contorno, la zona de agarre y la etiqueta.
+  const local = bounds({ ...o, euler: null, yaw: 0 });
+  o.dims = local.half.map((h) => h * 2);
+  const center = new THREE.Vector3(...local.center);
+  // Contorno: una caja de líneas que aparece al pasar el cursor o al agarrarlo.
+  const box = new THREE.BoxGeometry(...o.dims.map((d) => d + 0.004));
+  o.outline = new THREE.LineSegments(new THREE.EdgesGeometry(box), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false }));
+  o.outline.position.copy(center);
+  o.outline.renderOrder = 10;
+  o.outline.visible = false;
+  o.outline.raycast = () => {};   // las líneas no se agarran (su umbral de clic abarcaría toda la escena)
+  o.mesh.add(o.outline);
+  // Zona de agarre invisible, más grande que el objeto: lo chico (un cubo de 3 cm) se agarra fácil.
+  const grip = o.dims.map((d) => Math.max(d + 0.03, 0.06));
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(...grip), new THREE.MeshBasicMaterial({ visible: false }));
+  proxy.position.copy(center);
+  proxy.userData.obj = o;
+  o.mesh.add(proxy);
+  o.mesh.position.set(...o.pos);
+  o.mesh.quaternion.set(...objectQuat(o));
   o.mesh.userData.obj = o;
   root.add(o.mesh);
   objects.push(o);
   return o;
+}
+
+/**
+ * Dónde soltar un objeto nuevo: delante del robot, sin encimarse con los otros objetos ni con la base, y
+ * con su parte de abajo unos centímetros sobre el piso para que caiga y se acomode solo. Los grandes
+ * (un escritorio) van más lejos, fuera del alcance del brazo.
+ */
+function dropPosition(o) {
+  const b = bounds(o);
+  const r = b.radius;
+  const base = 0.12;   // lo que ocupa la base del robot
+  const taken = objects.map((x) => {
+    const p = objectState(x)?.pos || x.pos;
+    return { x: p[0], y: p[1], r: bounds(x).radius };
+  });
+  const free = (x, y) => Math.hypot(x, y) > base + r && taken.every((t) => Math.hypot(x - t.x, y - t.y) > t.r + r + 0.01);
+  const z = b.half[2] - b.center[2] + 0.04;
+  for (let d = Math.max(0.2, base + r + 0.02); d < 4; d += Math.max(0.03, r / 2)) {
+    for (const deg of [0, 20, -20, 40, -40, 60, -60, 90, -90]) {
+      const a = (deg + (Math.random() - 0.5) * 8) * Math.PI / 180;
+      const x = Math.cos(a) * d, y = Math.sin(a) * d;
+      if (free(x, y)) return [x, y, z];
+    }
+  }
+  return [0.3, 0, z];
 }
 
 function addObject(spec) {
@@ -480,10 +570,47 @@ function addObject(spec) {
   return o.id;
 }
 
+/**
+ * Cambia un objeto ya puesto: dónde está (pos, m), su giro (euler o yaw, grados), su peso, color, nombre o si
+ * está fijo. Mover o girar lo deja quieto en el lugar nuevo (y la física sigue desde ahí); lo demás lo rearma.
+ */
+function updateObject(id, changes = {}) {
+  const o = objects.find((x) => x.id === id);
+  if (!o) return false;
+  const now = objectState(o);
+  const turned = "euler" in changes || "yaw" in changes;
+  const spec = {
+    id: o.id, shape: o.shape, size: o.size, mass: o.mass, color: o.color, yaw: o.yaw, euler: o.euler, parts: o.parts,
+    fixed: o.fixed, name: o.name, pos: now?.pos || o.pos, ...changes, drop: false,
+  };
+  // Un color nuevo pinta todas las piezas.
+  if ("color" in changes && spec.parts) spec.parts = spec.parts.map((p) => ({ ...p, color: changes.color }));
+  const index = objects.indexOf(o);
+  root.remove(o.mesh);
+  objects.splice(index, 1);
+  const n = makeObject(spec);
+  objects.splice(objects.indexOf(n), 1);
+  objects.splice(index, 0, n);   // mismo lugar en la lista
+  if (hovered === o) hovered = n;
+  if (selected === o) selected = n;
+  if (drag?.obj === o) drag = null;
+  if (mjm) {
+    compileScene();
+    // Si no se pidió otro giro, conserva el que tenía (p. ej. un cubo caído de costado).
+    if (!turned && now) setObjectState(n, { pos: n.pos, quat: now.quat });
+    mj.mj_forward(mjm, mjd);
+    sync();
+  }
+  return true;
+}
+
 function removeObject(id) {
   const o = objects.find((x) => x.id === id);
   if (!o) return;
   root.remove(o.mesh);
+  if (hovered === o) hovered = null;
+  if (selected === o) selected = null;
+  if (drag?.obj === o) drag = null;
   objects = objects.filter((x) => x !== o);
   if (mjm) { compileScene(); sync(); }
 }
@@ -505,7 +632,9 @@ function addCamera(spec) {
 // ---------- paso de simulación ----------
 function physicsStep() {
   const t0 = performance.now();
+  skills.tick(params.timestep);
   for (const j of model?.joints || []) drive(j);
+  pullDragged();
   mj.mj_step(mjm, mjd);
   stepMs = 0.98 * stepMs + 0.02 * (performance.now() - t0);
   simTime = mjd.time;
@@ -582,9 +711,10 @@ function frame(now) {
     if (accum > params.timestep * 4) accum = 0;  // no alcanza: se desacelera en vez de acumular
     rtf = dtWall > 0 ? 0.9 * rtf + 0.1 * ((simTime - t0) / dtWall) : rtf;
   } else rtf = 0;
+  if (paused && drag) pullDragged();
   if (mjd) { sync(); if (render.contacts) updateContacts(); else { markers.count = 0; readout = { contacts: mjd.ncon, maxForce: 0, links: {} }; } }
-  pullDragged();
   controls.update();
+  updateObjectLabel();
   renderer.render(scene, camera);
   renderPip();
   postState(now);
@@ -609,33 +739,165 @@ function renderPip() {
   document.getElementById("pipLabel").textContent = c.name;
 }
 
-// ---------- empujar objetos con Shift + arrastrar ----------
+// ---------- agarrar objetos con el mouse ----------
+// Clic sobre un objeto: se levanta unos centímetros y sigue al cursor sobre el plano horizontal; la rueda
+// del mouse lo sube o lo baja. Al soltar, cae con la física. Lo sostiene un resorte amortiguado sobre su
+// centro (como agarrarlo con la mano), así que choca y empuja como cualquier cosa. En pausa, se mueve sin física.
 const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
-let drag = null;
+let drag = null, hoverAt = 0;
+const LIFT = 0.04;
 function rayFrom(e) {
   const r = renderer.domElement.getBoundingClientRect();
   pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(pointer, camera);
 }
-function onPointerDown(e) {
-  if (!e.shiftKey || !mjd) return;
+function objectAt(e) {
   rayFrom(e);
-  const hit = raycaster.intersectObjects(objects.map((o) => o.mesh))[0];
-  if (!hit) return;
+  const hit = raycaster.intersectObjects(objects.filter((o) => !o.fixed).map((o) => o.mesh), true)[0];
+  return hit?.object.userData.obj ? { obj: hit.object.userData.obj, point: hit.point } : null;
+}
+// Con el mouse: arrastrar un objeto lo lleva (la rueda lo sube o baja; Shift + rueda lo gira), Q / E lo giran de a
+// 15° (al agarrado o al seleccionado) y un clic sin arrastrar lo selecciona, para que la app lo abra en su lista.
+const TURN_STEP = Math.PI / 12;
+let selected = null;
+function select(o) {
+  selected = o;
+  post({ type: "select", id: o?.id ?? null });
+}
+function onPointerDown(e) {
+  if (e.button !== 0 || e.altKey || e.metaKey || e.ctrlKey || !mjd) return;
+  const hit = objectAt(e);
+  if (!hit || hit.obj.body < 0) {
+    // En vacío: si termina siendo un clic (no un giro de cámara), quita la selección.
+    const at = { x: e.clientX, y: e.clientY };
+    window.addEventListener("pointerup", (u) => { if (Math.hypot(u.clientX - at.x, u.clientY - at.y) < 5 && selected) select(null); }, { once: true });
+    return;
+  }
   e.stopPropagation();
   controls.enabled = false;
-  drag = { obj: hit.object.userData.obj, plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -hit.point.y), to: hit.point.clone() };
-  window.addEventListener("pointermove", onPointerMove);
-  window.addEventListener("pointerup", () => { drag = null; controls.enabled = true; window.removeEventListener("pointermove", onPointerMove); }, { once: true });
+  const b = hit.obj.body;
+  // El punto agarrado y el centro del objeto, en el marco del robot (z arriba).
+  const grab = root.worldToLocal(hit.point.clone());
+  const com = new THREE.Vector3(mjd.xpos[b * 3], mjd.xpos[b * 3 + 1], mjd.xpos[b * 3 + 2]);
+  drag = { obj: hit.obj, offset: com.clone().sub(grab), height: grab.z + LIFT, target: grab.clone().setZ(grab.z + LIFT) };
+  if (selected !== hit.obj) select(hit.obj);
+  renderer.domElement.style.cursor = "grabbing";
+  window.addEventListener("pointermove", onDragMove);
+  window.addEventListener("wheel", onDragWheel, { passive: false });
+  window.addEventListener("pointerup", endDrag, { once: true });
 }
-function onPointerMove(e) { if (drag) { rayFrom(e); raycaster.ray.intersectPlane(drag.plane, drag.to); } }
+function onDragMove(e) {
+  if (!drag) return;
+  rayFrom(e);
+  // El plano horizontal a la altura de agarre, pasado a coordenadas de three.js (y arriba).
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -drag.height);
+  const hit = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(plane, hit)) drag.target = root.worldToLocal(hit).setZ(drag.height);
+}
+function onDragWheel(e) {
+  if (!drag) return;
+  e.preventDefault();
+  if (e.shiftKey) {
+    // Con Shift, la rueda gira el objeto alrededor de la vertical (el desplazamiento puede llegar en x).
+    turnObject(drag.obj, -(e.deltaY || e.deltaX) * 0.004);
+    return;
+  }
+  drag.height = Math.max(0.005, drag.height - e.deltaY * 0.0006);
+  drag.target.z = drag.height;
+}
+function endDrag() {
+  hovered = drag?.obj ?? hovered;
+  drag = null;
+  controls.enabled = true;
+  renderer.domElement.style.cursor = "";
+  window.removeEventListener("pointermove", onDragMove);
+  window.removeEventListener("wheel", onDragWheel);
+}
+/** Gira un objeto `angle` radianes alrededor de la vertical, sin moverlo de lugar (quieto o con física). */
+function turnObject(o, angle) {
+  if (!o || o.qadr < 0 || !mjd) return;
+  const a = o.qadr + 3;
+  const q = new THREE.Quaternion(mjd.qpos[a + 1], mjd.qpos[a + 2], mjd.qpos[a + 3], mjd.qpos[a]);
+  q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle)).normalize();
+  mjd.qpos[a] = q.w; mjd.qpos[a + 1] = q.x; mjd.qpos[a + 2] = q.y; mjd.qpos[a + 3] = q.z;
+  for (let i = 3; i < 6; i++) mjd.qvel[o.dadr + i] = 0;
+  mj.mj_forward(mjm, mjd);
+}
+function onKeyDown(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || /input|textarea|select/i.test(e.target?.tagName ?? "")) return;
+  const key = e.key.toLowerCase();
+  if (key !== "q" && key !== "e") return;
+  const o = drag?.obj ?? selected;
+  if (!o) return;
+  e.preventDefault();
+  turnObject(o, key === "q" ? TURN_STEP : -TURN_STEP);
+}
+/** El cursor de mano y el contorno de lo que se puede agarrar. */
+let hovered = null;
+function onHover(e) {
+  if (drag || !mjd || performance.now() - hoverAt < 40) return;
+  hoverAt = performance.now();
+  const hit = objectAt(e);
+  hovered = hit?.obj ?? null;
+  renderer.domElement.style.cursor = hovered ? "grab" : "";
+}
+function onLeave() { if (!drag) hovered = null; }
+
+const fmtLen = (m) => (m >= 1 ? `${+m.toFixed(2)} m` : `${+(m * 100).toFixed(m < 0.1 ? 1 : 0)}`);
+const fmtMass = (kg) => (kg >= 1 ? `${+kg.toFixed(kg >= 10 ? 0 : 1)} kg` : `${Math.round(kg * 1000)} g`);
+const OBJ_NAMES = { box: "Box", sphere: "Sphere", cylinder: "Cylinder", capsule: "Capsule" };
+/** En cada paso de física: la fuerza que lleva el objeto agarrado hacia el cursor (resorte + amortiguador). */
 function pullDragged() {
   for (const o of objects) if (o.pulled) { for (let i = 0; i < 6; i++) mjd.xfrc_applied[o.body * 6 + i] = 0; o.pulled = false; }
-  if (!drag || paused || drag.obj.body < 0) return;
-  const b = drag.obj.body, local = root.worldToLocal(drag.to.clone()), k = mjm.body_mass[b] * 60;
-  mjd.xfrc_applied[b * 6] = (local.x - mjd.xpos[b * 3]) * k;
-  mjd.xfrc_applied[b * 6 + 1] = (local.y - mjd.xpos[b * 3 + 1]) * k;
-  drag.obj.pulled = true;
+  if (!drag || drag.obj.body < 0 || !mjd) return;
+  const o = drag.obj, b = o.body, m = mjm.body_subtreemass?.[b] || mjm.body_mass[b];
+  const goal = drag.target.clone().add(drag.offset);
+  if (paused) {
+    // Sin física: se lleva directo (y queda quieto donde se suelte hasta seguir).
+    const s = objectState(o);
+    if (s) { setObjectState(o, { pos: [goal.x, goal.y, goal.z], quat: s.quat }); mj.mj_forward(mjm, mjd); }
+    return;
+  }
+  const w = 14, k = m * w * w, c = 2 * m * w;      // críticamente amortiguado
+  // Velocidad del objeto: la de su articulación libre (avance en el marco del mundo, giro en el suyo).
+  const lin = (i) => (o.dadr >= 0 ? mjd.qvel[o.dadr + i] : 0), ang = (i) => (o.dadr >= 0 ? mjd.qvel[o.dadr + 3 + i] : 0);
+  const pos = [mjd.xipos[b * 3], mjd.xipos[b * 3 + 1], mjd.xipos[b * 3 + 2]];
+  const goalArr = [goal.x, goal.y, goal.z];
+  const fmax = m * (params.gravity + 60);
+  for (let i = 0; i < 3; i++) {
+    const force = k * (goalArr[i] - pos[i]) - c * lin(i) + (i === 2 ? m * params.gravity : 0);
+    mjd.xfrc_applied[b * 6 + i] = Math.max(-fmax, Math.min(fmax, force));
+  }
+  // Frena el giro para que no quede dando vueltas colgado del cursor.
+  const inertia = (mjm.body_inertia[b * 3] + mjm.body_inertia[b * 3 + 1] + mjm.body_inertia[b * 3 + 2]) / 3;
+  const q = new THREE.Quaternion(mjd.xquat[b * 4 + 1], mjd.xquat[b * 4 + 2], mjd.xquat[b * 4 + 3], mjd.xquat[b * 4]);
+  const spin = new THREE.Vector3(ang(0), ang(1), ang(2)).applyQuaternion(q);   // al marco del mundo
+  mjd.xfrc_applied[b * 6 + 3] = -inertia * 40 * spin.x;
+  mjd.xfrc_applied[b * 6 + 4] = -inertia * 40 * spin.y;
+  mjd.xfrc_applied[b * 6 + 5] = -inertia * 40 * spin.z;
+  o.pulled = true;
+}
+
+/** Cada cuadro: el contorno del objeto señalado y su etiqueta (nombre, medidas y peso) encima. */
+function updateObjectLabel() {
+  const target = drag?.obj ?? hovered ?? selected;
+  for (const o of objects) o.outline.visible = o === target || o === selected;
+  const el = document.getElementById("objLabel");
+  if (!target || !objects.includes(target)) { el.hidden = true; return; }
+  const top = new THREE.Box3().setFromObject(target.outline);
+  const p = new THREE.Vector3((top.min.x + top.max.x) / 2, top.max.y, (top.min.z + top.max.z) / 2).project(camera);
+  const r = renderer.domElement.getBoundingClientRect();
+  const [a, b, c] = target.dims;
+  const big = Math.max(a, b, c) >= 1;
+  const size = big ? `${fmtLen(a)} × ${fmtLen(b)} × ${fmtLen(c)}` : `${fmtLen(a)} × ${fmtLen(b)} × ${fmtLen(c)} cm`;
+  el.innerHTML = "";
+  el.append(target.name || OBJ_NAMES[target.shape] || "Object");
+  const detail = document.createElement("span");
+  detail.textContent = `  ${size} · ${fmtMass(target.mass)}`;
+  el.append(detail);
+  el.style.left = `${((p.x + 1) / 2) * r.width}px`;
+  el.style.top = `${((1 - p.y) / 2) * r.height}px`;
+  el.hidden = p.z > 1;
 }
 
 // ---------- vistas ----------
@@ -686,7 +948,7 @@ function setup() {
   sun.position.set(1.5, 3, 1.2);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -1, right: 1, top: 1, bottom: -1, near: 0.1, far: 8 });
+  Object.assign(sun.shadow.camera, { left: -2, right: 2, top: 2, bottom: -2, near: 0.1, far: 10 });
   scene.add(sun, new THREE.HemisphereLight(0xffffff, 0x444444, 0.4));
   ground = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.ShadowMaterial({ opacity: 0.22 }));
   ground.receiveShadow = true;
@@ -700,9 +962,33 @@ function setup() {
   markers.count = 0;
   root.add(markers);
   canvas.addEventListener("pointerdown", onPointerDown, { capture: true });
+  window.addEventListener("keydown", onKeyDown);
+  canvas.addEventListener("pointermove", onHover);
+  canvas.addEventListener("pointerleave", onLeave);
   new ResizeObserver(resize).observe(canvas);
   resize();
   renderer.setAnimationLoop(frame);
+}
+
+/** Cuadrícula con coordenadas en píxeles, para que la IA pueda señalar con precisión. */
+function drawGrid(ctx, w, h, step = 64) {
+  ctx.save();
+  ctx.lineWidth = 1;
+  ctx.font = "11px -apple-system, sans-serif";
+  ctx.textBaseline = "top";
+  for (let x = step; x < w; x += step) {
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); ctx.stroke();
+    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(x + 2, 2, 26, 13);
+    ctx.fillStyle = "#fff"; ctx.fillText(String(x), x + 4, 3);
+  }
+  for (let y = step; y < h; y += step) {
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); ctx.stroke();
+    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(2, y + 2, 26, 13);
+    ctx.fillStyle = "#fff"; ctx.fillText(String(y), 4, y + 3);
+  }
+  ctx.restore();
 }
 
 // ---------- API para la app ----------
@@ -730,6 +1016,7 @@ window.studio = {
       const built = await buildModel(im, url.slice(0, url.lastIndexOf("/")), profile, native);
       if (token !== currentLoad) return;
       model = built;
+      for (const l of model.links.values()) root.add(l.group);
 
       // Al sistema de archivos de MuJoCo: el MJCF con sus archivos, o el armado desde el URDF.
       if (files) rmTree(files.dir);
@@ -750,8 +1037,20 @@ window.studio = {
       compileScene();
 
       for (const c of [...(im.cameras || []), ...(profile.cameras || [])]) addCamera(c);
+      effectorConfig = profile.effector || null;
       homeTargets = { ...(im.home || {}), ...(profile.home || {}) };
       this.reset(true);
+      // Una cámara fija sobre la mesa, como la del robot real, si el perfil no trae ninguna fija: encima de la
+      // zona de trabajo de este brazo y a una altura según su alcance (sirve para un brazo chico o uno grande).
+      if (!cameras.some((c) => c.link === model.rootLink)) {
+        let pos = [0.2, 0, 0.55];
+        try {
+          const w = skills.workspace(0);
+          const x = Math.cos(w.azimuth) * w.distance, y = Math.sin(w.azimuth) * w.distance;
+          pos = [w.base[0] + x, w.base[1] + y, w.base[2] + Math.max(0.45, 2.4 * w.distance)];
+        } catch { /* sin brazo reconocible: la posición de siempre */ }
+        addCamera({ name: "Overhead", link: model.rootLink, pos, quat: [0, 0, 0, 1], fovy: 60, width: 640, height: 480 });
+      }
       applyRender();
       frameModel();
       post({
@@ -764,7 +1063,7 @@ window.studio = {
         fixedJoints: im.joints.filter((j) => j.type === "fixed").length,
         mass: model.mass,
         cameras: cameras.map((c) => c.name),
-        objects: objects.map(({ id, shape, size, mass, color, pos, yaw, fixed, name }) => ({ id, shape, size, mass, color, pos, yaw, fixed, name })),
+        objects: objects.map(({ id, shape, size, mass, color, pos, yaw, euler, parts, fixed, name }) => ({ id, shape, size, mass, color, pos, yaw, euler, parts, fixed, name })),
         physics: { ...params },
         warnings: built.warnings,
       });
@@ -801,6 +1100,7 @@ window.studio = {
   /** Coloca el robot de golpe en sus objetivos (o en la pose de reposo), quieto. Los objetos no se mueven. */
   reset(zeroTargets = true) {
     if (!model || !mjd) return;
+    skills.cancel("the robot was reset");
     for (const j of model.joints) {
       if (zeroTargets) j.target = homeTargets[j.name] ?? (j.lower != null ? clamp(0, j.lower, j.upper) : 0);
     }
@@ -821,7 +1121,7 @@ window.studio = {
     sync();
   },
   /** Imagen JPEG (data URL) de la vista principal o de una cámara montada, para que la IA «mire». */
-  capture(cameraName = null, width = 768, format = "jpeg") {
+  capture(cameraName = null, width = 768, format = "jpeg", grid = false) {
     const c = cameras.find((x) => x.name === cameraName);
     const cam = c ? c.cam : camera;
     const w = width, h = Math.round(width / (c ? c.cam.aspect : camera.aspect));
@@ -846,6 +1146,7 @@ window.studio = {
     tmp.width = w; tmp.height = h;
     tmp.getContext("2d").putImageData(img, 0, 0);
     ctx.drawImage(tmp, 0, 0);
+    if (grid) drawGrid(ctx, w, h);
     return format === "png" ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.8);
   },
   resetObjects(list) {
@@ -855,6 +1156,16 @@ window.studio = {
     if (mjm) { compileScene(); sync(); }
   },
   addObject(spec) { return addObject(spec); },
+  updateObject(id, changes) { return updateObject(id, changes); },
+  /** Dónde está y cómo está girado cada objeto ahora (m, grados alrededor de z). */
+  objectPoses() {
+    return objects.map((o) => {
+      const s = objectState(o);
+      const q = s ? s.quat : objectQuat(o);
+      const yaw = Math.atan2(2 * (q[3] * q[2] + q[0] * q[1]), 1 - 2 * (q[1] * q[1] + q[2] * q[2])) * 180 / Math.PI;
+      return { id: o.id, pos: s?.pos || o.pos, yaw };
+    });
+  },
   removeObject(id) { removeObject(id); },
   addCamera(spec) { addCamera(spec); },
   removeCamera(name) {
@@ -864,6 +1175,8 @@ window.studio = {
     if (activeCamera === name) activeCamera = null;
   },
   showCamera(name) { activeCamera = name || null; },
+  /** Selecciona un objeto (o ninguno) desde la app: lo marca con su contorno y etiqueta. */
+  select(id) { selected = objects.find((o) => o.id === id) ?? null; },
   pause(on) { paused = on; },
   step(n = 1) { if (!mjd || !model) return; for (let i = 0; i < n; i++) physicsStep(); sync(); },
   setSpeed(x) { speed = x; },
@@ -895,6 +1208,52 @@ window.studio = {
     }
     if (mjd) mj.mj_forward(mjm, mjd);
     sync();
+  },
+  /**
+   * Una habilidad que se mueve sola: { type: pick | place | reach | gripper, camera, x, y, width, height, surface, open }.
+   * El objetivo sale de un píxel de una cámara (no de dónde están los objetos). Devuelve cómo salió.
+   */
+  skill(spec) {
+    if (!model || !mjd) throw new Error("The robot isn't loaded.");
+    const s = { ...spec };
+    if (s.camera != null) {
+      // Al agarrar se señala la cara de arriba del objeto; al dejar, la superficie donde va.
+      const plane = s.type === "pick" ? (s.height ?? 0.025) : (s.surface ?? 0);
+      const px = (x, y) => skills.pointFromPixel(s.camera, x, y, s.imageWidth ?? 768, plane);
+      if (s.fingers) {
+        // Dónde va cada dedo: el medio es el centro del agarre; la línea entre ellos, hacia dónde cierran.
+        const [a, b] = s.fingers.map(([x, y]) => px(x, y));
+        s.point = a.map((v, i) => (v + b[i]) / 2);
+        s.yaw = [b[0] - a[0], b[1] - a[1]];
+        s.width = Math.hypot(...s.yaw);
+      } else {
+        s.point = px(s.x, s.y);
+      }
+    }
+    paused = false;
+    return skills.run(s);
+  },
+  cancelSkill() { skills.cancel("stopped"); },
+  /** Lo mismo que skill pero sin mover nada: la trayectoria para que la haga el robot real (ver skills.timeline). */
+  planSkill(spec, opts) {
+    if (!model || !mjd) throw new Error("The robot isn't loaded.");
+    return skills.timeline(spec, opts);
+  },
+  /** El centro del agarre ahora (m, marco de la base). */
+  tip() { return model && mjd ? skills.tip() : null; },
+  /** Cambia los límites de las articulaciones (p. ej. los de la calibración del robot real): {nombre: [min, max]}. */
+  setLimits(limits) {
+    for (const j of model?.joints || []) {
+      const l = limits?.[j.name];
+      if (l && l.length === 2 && l[0] < l[1]) { j.lower = l[0]; j.upper = l[1]; }
+    }
+  },
+  effector() { return model ? skills.effector() : null; },
+  /** El espacio de trabajo del brazo: alcance, hacia dónde mira y puntos alcanzables (m, marco de la base). */
+  workspace(count = 8) { return model && mjd ? skills.workspace(count) : null; },
+  /** Las cámaras fijas o montadas, con el tamaño de su imagen a `width` de ancho. */
+  cameraInfo(width = 768) {
+    return cameras.map((c) => ({ name: c.name, link: c.link, fixed: c.link === model?.rootLink, width, height: Math.round(width / c.cam.aspect) }));
   },
   setInsets({ right = 0 }) { if (right !== insetRight) { insetRight = right; resize(); } },
   /** Pose actual, para guardar un keyframe. */

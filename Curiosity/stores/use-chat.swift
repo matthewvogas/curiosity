@@ -24,6 +24,8 @@ final class UseChat {
     private var task: Task<Void, Never>?
     private var robotName = ""
     private(set) var robotID = ""
+    /// La IA guardó una lección en las notas del robot (la pestaña Notes se vuelve a leer).
+    var onRemember: () -> Void = {}
 
     private static let maxTurns = 24
 
@@ -75,10 +77,13 @@ final class UseChat {
             error = "Add your API key in Settings to talk to the robot."
             return
         }
-        guard let system = body.chatSystemPrompt(robotName: robotName) else {
+        guard var system = body.chatSystemPrompt(robotName: robotName) else {
             error = body.chatNotReady
             return
         }
+        // Las notas del robot (lo medido, lo de la persona y lo aprendido), leídas en cada mensaje.
+        let notes = RobotNotesQueries.load(robotID)
+        system += RobotNotes.promptSection(facts: body.chatRobotFacts, notes: notes.notes, learned: notes.learned)
         error = nil
         items.append(ChatItem(kind: .user(text)))
         history.append(["role": "user", "content": text])
@@ -144,8 +149,12 @@ final class UseChat {
                     "model": settings.modelID,
                     "max_tokens": 16000,
                     "system": system,
-                    "tools": body.chatTools,
+                    "tools": body.chatTools + [RobotNotes.rememberTool],
                     "output_config": ["effort": settings.effort],
+                    // El prompt del sistema cambia entre turnos (estado del robot, cámaras, calibración): los
+                    // pensamientos de turnos anteriores quedan atados al prompt viejo y la API los rechazaría.
+                    // Con drop_block los descarta y la conversación sigue.
+                    "thinking": ["type": "adaptive", "block_binding": ["prefix_mismatch_behavior": "drop_block"]],
                     "messages": history,
                 ]
                 // Si un filtro de seguridad declina, la API reintenta con otro modelo (solo Opus y Sonnet).
@@ -190,6 +199,18 @@ final class UseChat {
         let id = block["id"] as? String ?? ""
         let name = block["name"] as? String ?? ""
         let input = block["input"] as? [String: Any] ?? [:]
+
+        // Una lección para las notas del robot: la guarda el chat, sin mover nada ni pedir aprobación.
+        if name == "remember" {
+            let note = (input["note"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let file = RobotNotesQueries.load(robotID)
+            let (learned, added) = RobotNotes.adding(note, to: file.learned)
+            if added { RobotNotesQueries.save(robotID, notes: file.notes, learned: learned) }
+            items.append(ChatItem(kind: .action(title: "Noted: \(note)", detail: "", running: false, failed: false)))
+            onRemember()
+            return result(id, text: added ? "Saved." : "Already noted.")
+        }
+
         let title = body.chatTitle(name, input)
 
         if let detail = body.chatApproval(name, input) {
@@ -213,13 +234,19 @@ final class UseChat {
         }
 
         do {
-            switch try await body.chatRun(name, input) {
+            let output = try await body.chatRun(name, input)
+            switch output {
             case .text(let text, let problem):
                 finish(problem ?? "", failed: problem != nil)
                 return result(id, text: text)
-            case .images(let photos):
-                finish("")
+            case .images(let photos), .report(_, let photos, _):
                 var content: [[String: Any]] = []
+                if case .report(let text, _, let problem) = output {
+                    finish(problem ?? "", failed: problem != nil)
+                    content.append(["type": "text", "text": text])
+                } else {
+                    finish("")
+                }
                 for photo in photos {
                     items.append(ChatItem(kind: .image(photo.jpeg)))
                     if !photo.label.isEmpty { content.append(["type": "text", "text": "Camera \"\(photo.label)\":"]) }

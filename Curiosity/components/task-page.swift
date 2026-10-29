@@ -9,7 +9,8 @@ struct TaskPageInfo {
     var policies: [(id: String, label: String)]
     var progress: TrainProgress?
     var hasModel: Bool
-    var eta: String
+    /// Medido en entrenamientos anteriores de esta Mac; nil si todavía no hay ninguno.
+    var eta: String?
     var canRecord: Bool
     var canRun: Bool
     var busy: Bool
@@ -26,6 +27,7 @@ struct TaskPageActions {
     var onWatchTraining: (() -> Void)?
     var onRun: () -> Void
     var onFixSetup: () -> Void
+    var onRunSetup: () -> Void
     var onRemove: () -> Void
 }
 
@@ -49,7 +51,14 @@ struct TaskPage: View {
 
             Section {
                 if let hub = info.hubDataset {
-                    LabeledContent("Data from Hugging Face", value: hub)
+                    LabeledContent("Data from Hugging Face") {
+                        if let url = URL(string: "https://huggingface.co/datasets/\(hub)") {
+                            Link(destination: url) { Label(hub, systemImage: "arrow.up.right.square") }
+                                .help("Open the dataset on Hugging Face")
+                        } else {
+                            Text(hub)
+                        }
+                    }
                     Button("Record my own instead", action: actions.onUseOwn)
                 } else {
                     LabeledContent("Recorded") {
@@ -60,7 +69,7 @@ struct TaskPage: View {
                     HStack {
                         Button("Use data from Hugging Face…", action: actions.onHub).buttonStyle(.link)
                         Spacer()
-                        if !info.canRecord { Button("Set up leader and camera…", action: actions.onFixSetup) }
+                        if !info.canRecord { Button("Set up follower and camera…", action: actions.onFixSetup) }
                         Button(info.demos == 0 ? "Record" : "Keep recording", action: actions.onRecord)
                             .buttonStyle(.borderedProminent)
                             .disabled(!info.canRecord || info.busy || info.demos >= episodes)
@@ -69,7 +78,7 @@ struct TaskPage: View {
             } header: {
                 Text("1. Demonstrations")
             } footer: {
-                Text("Do the task with the leader from start to finish, and move the object a little between each one. Keys: → finish, ← redo, Esc save.")
+                Text("→ finish · ← redo · Esc save")
                     .foregroundStyle(Theme.muted)
             }
 
@@ -102,13 +111,14 @@ struct TaskPage: View {
             } header: {
                 Text("2. Training")
             } footer: {
-                Text(hasData ? "Takes \(info.eta) on your Mac and keeps going even if you close the app." : "Record some demonstrations first.")
+                Text(hasData ? info.eta ?? "" : "No demonstrations yet.")
                     .foregroundStyle(Theme.muted)
             }
 
             Section {
                 Stepper("\(Int(runSeconds)) s per try", value: $runSeconds, in: 10...600, step: 10)
                 HStack {
+                    Button("Cameras and arm…", action: actions.onRunSetup).disabled(!info.hasModel)
                     Spacer()
                     Button("Run on the robot", action: actions.onRun)
                         .buttonStyle(.borderedProminent)
@@ -117,19 +127,25 @@ struct TaskPage: View {
             } header: {
                 Text("3. Run")
             } footer: {
-                Text(info.hasModel ? "The robot moves on its own. Clear the table; Esc stops it." : "Available once training finishes.")
-                    .foregroundStyle(Theme.muted)
+                Text(runHint).foregroundStyle(Theme.muted)
             }
 
             Section {
                 Button("Remove task", role: .destructive, action: actions.onRemove)
-            } footer: {
-                Text("The demonstrations and the model stay on your Mac.").foregroundStyle(Theme.muted)
             }
         }
         .formStyle(.grouped)
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity)
+    }
+
+    /// Por qué «Run on the robot» está apagado, o qué esperar cuando no lo está.
+    private var runHint: String {
+        if !info.hasModel { return "Available once training finishes." }
+        if training { return "Wait for the training to finish." }
+        if !info.canRun { return "Set up the follower and camera first." }
+        if info.busy { return "Stop Live or moving with the leader first." }
+        return "Esc stops it."
     }
 
     private var trainState: String {

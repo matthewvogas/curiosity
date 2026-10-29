@@ -1,8 +1,8 @@
 import Foundation
 import Observation
 
-/// Grabar demostraciones en la simulación con el leader real: el leader mueve el SO-101 simulado y la
-/// cámara de la simulación y su estado van al dataset (como lerobot-record, sin el brazo real).
+/// Grabar demostraciones en la simulación con el leader real: el leader mueve el robot simulado (por nombre de
+/// articulación) y la cámara de la simulación y su estado van al dataset (como lerobot-record, sin el brazo real).
 @Observable
 final class UseSimRecording {
     private let lerobot: UseLeRobot
@@ -17,10 +17,14 @@ final class UseSimRecording {
     var session: RobotSession? { lerobot.session?.kind == "simrecord" ? lerobot.session : nil }
     var isActive: Bool { session?.active == true }
 
-    /// Si el robot abierto es un SO-100/101 (tiene sus seis articulaciones).
-    var canRecord: Bool {
+    /// Hace falta un robot abierto con articulaciones; las del leader se emparejan por nombre al empezar.
+    var canRecord: Bool { !(simulation.model?.joints.isEmpty ?? true) }
+
+    /// Las articulaciones del leader que el robot simulado no tiene (no se pueden copiar).
+    var unmatched: [String] {
+        guard let s = session else { return [] }
         let names = Set(simulation.model?.joints.map(\.name) ?? [])
-        return RealAgentTools.joints.allSatisfy(names.contains)
+        return s.jointNames.filter { !names.contains($0) }
     }
 
     func start(leader: Device, task: String, episodes: Int, seconds: Double, reset: Double) async {
@@ -42,20 +46,24 @@ final class UseSimRecording {
         try? await Task.sleep(for: .milliseconds(300))
         let camera = simulation.model?.cameras.first
         while !Task.isCancelled, let s = session, s.active || s.phase == "starting" {
-            for (j, deg) in s.joints {
-                simulation.setTarget(j, j == "gripper" ? deg / 100 * Self.gripperRange : deg * .pi / 180)
+            let ranges = Dictionary((simulation.model?.joints ?? []).map { ($0.name, $0) }) { a, _ in a }
+            for (j, v) in s.joints {
+                guard let info = ranges[j],
+                      let q = JointUnits.toModel(v, unit: s.units[j] ?? "deg", lower: info.lower, upper: info.upper) else { continue }
+                simulation.setTarget(j, q)
             }
             if s.phase == "recording", let jpeg = try? await simulation.capture(camera: camera) {
-                let state = Dictionary(uniqueKeysWithValues: simulation.state.joints
-                    .filter { RealAgentTools.joints.contains($0.name) }
-                    .map { ($0.name, $0.name == "gripper" ? $0.q / Self.gripperRange * 100 : $0.q * 180 / .pi) })
+                // El estado en las unidades del leader; una articulación que el modelo no tiene queda en 0.
+                let positions = Dictionary(simulation.state.joints.map { ($0.name, $0.q) }) { a, _ in a }
+                let state = Dictionary(uniqueKeysWithValues: s.jointNames.map { j -> (String, Double) in
+                    guard let q = positions[j], let info = ranges[j],
+                          let v = JointUnits.fromModel(q, unit: s.units[j] ?? "deg", lower: info.lower, upper: info.upper) else { return (j, 0) }
+                    return (j, v)
+                })
                 await lerobot.simFrame(jpeg: jpeg, state: state)
             } else {
                 try? await Task.sleep(for: .milliseconds(33))
             }
         }
     }
-
-    /// La pinza del SO-101 en el URDF va de 0 a 1.745 rad; LeRobot la mide de 0 a 100.
-    private static let gripperRange = 1.74533
 }

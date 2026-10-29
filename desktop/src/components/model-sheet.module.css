@@ -1,0 +1,14 @@
+.text {
+  margin: 0;
+  padding: var(--s-4);
+  border-radius: var(--r-m);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: var(--text-s);
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre-wrap;
+  user-select: text;
+  font-variant-numeric: tabular-nums;
+}

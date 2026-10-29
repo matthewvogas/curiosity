@@ -5,8 +5,10 @@ import Observation
 @Observable
 final class UseTasks {
     private(set) var tasks: [TeachTask] = TaskQueries.load()
-    /// La tarea abierta; sin ninguna, se ve el resumen del robot.
-    var selectedID: UUID?
+    /// La tarea abierta; sin ninguna, se ve el resumen del robot. Se recuerda al volver a abrir la app.
+    var selectedID: UUID? = UserDefaults.standard.string(forKey: "tasks.open").flatMap(UUID.init) {
+        didSet { UserDefaults.standard.set(selectedID?.uuidString, forKey: "tasks.open") }
+    }
     /// El robot para el que se está escribiendo una tarea nueva (abre la hoja).
     var composingFor: String?
 

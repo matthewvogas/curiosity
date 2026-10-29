@@ -29,8 +29,6 @@ struct JointControls: View {
 
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
                     Text("Joints").font(.headline)
-                    Text("Where each joint actually is, including coupled and unactuated ones.")
-                        .font(.caption).foregroundStyle(Theme.muted)
                     ForEach(joints) { joint in
                         JointBar(joint: joint, state: states.first { $0.name == joint.name })
                     }

@@ -1,0 +1,64 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  font-size: var(--text-m);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+.label {
+  font-size: var(--text-s);
+  color: var(--muted);
+}
+.preview,
+.previewSmall {
+  display: block;
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: var(--r-m);
+  border: 1px solid var(--line);
+  background: var(--stage);
+}
+.preview {
+  max-height: 200px;
+}
+.previewSmall {
+  max-height: 160px;
+}
+.extras {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.extraList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+.extra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+.footer {
+  font-size: var(--text-s);
+  color: var(--muted);
+}
+.run {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  max-height: 560px;
+}
+.done {
+  display: flex;
+  justify-content: flex-end;
+}

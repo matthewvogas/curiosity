@@ -35,15 +35,15 @@ struct RobotOverview: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Space.xxl) {
-                section("Tasks", help: "Each task has its own demonstrations, training and run.") {
+                section("Tasks") {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: Theme.Space.m)], spacing: Theme.Space.m) {
                         ForEach(tasks) { t in TaskCard(task: t) { onOpenTask(t.id) } }
                         NewTaskCard(action: onNewTask)
                     }
                 }
-                section("Data", help: "All the demonstrations on this Mac: the ones you recorded and the ones downloaded from Hugging Face.") {
+                section("Data") {
                     if datasets.isEmpty {
-                        empty("No demonstrations yet. They’re created when you record a task.")
+                        empty("No demonstrations yet")
                     } else {
                         rows(datasets) { d in
                             row(icon: .dataset, title: d.name,
@@ -56,9 +56,9 @@ struct RobotOverview: View {
                         }
                     }
                 }
-                section("What it learned", help: "The trained models. Run them on the robot whenever you like.") {
+                section("Models") {
                     if models.isEmpty {
-                        empty("Nothing yet. Models show up here once you finish training a task.")
+                        empty("No models yet")
                     } else {
                         rows(models) { m in
                             row(icon: .model, title: m.title, detail: m.detail) {
@@ -74,12 +74,12 @@ struct RobotOverview: View {
                                 }
                                 .buttonStyle(.borderless)
                                 .font(.caption)
-                                .help("Watch training live: progress, loss curve and log")
+                                .help("Watch training")
                                 if m.training {
                                     EmptyView()
                                 } else if m.ready {
                                     Button("Run") { onRunModel(m.id) }.disabled(!canRun)
-                                        .help(canRun ? "Let it do it on its own" : "Set up the follower and camera in Robot settings")
+                                        .help(canRun ? "Let it do it on its own" : "Set up the follower and camera first")
                                 } else {
                                     Text("Unfinished").font(.caption).foregroundStyle(Theme.faint)
                                 }
@@ -94,9 +94,9 @@ struct RobotOverview: View {
         }
     }
 
-    private func section<Content: View>(_ title: String, help: String, @ViewBuilder content: () -> Content) -> some View {
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
-            Text(title).font(.title3.weight(.semibold)).help(help)
+            Text(title).font(.title3.weight(.semibold))
             content()
         }
     }

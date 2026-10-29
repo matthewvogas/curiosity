@@ -11,7 +11,7 @@ struct TeachTask: Identifiable, Codable, Equatable {
     var hubDataset = false
     var createdAt = Date()
 
-    // Opciones (con valores por defecto pensados para el SO-101)
+    // Opciones (valores iniciales; cada tarea los cambia)
     var episodes = 50
     var episodeSeconds = 60.0
     var resetSeconds = 10.0

@@ -13,6 +13,9 @@ final class UseLeRobot {
     private(set) var status: Status = .off
     private(set) var env: LeRobotEnv?
     private(set) var calibrations = Calibrations()
+    /// Los robots y leaders que trae LeRobot.
+    private(set) var robotKinds: [RobotKind] = []
+    private(set) var teleopKinds: [RobotKind] = []
     private(set) var cameras: [CameraInfo] = []
     private(set) var session: RobotSession?
     /// Lo que ve la cámara del robot mientras se graba o corre un modelo (JPEG).
@@ -24,10 +27,13 @@ final class UseLeRobot {
     private(set) var error: String?
 
     var isBusy: Bool { session?.active == true }
+    @ObservationIgnored private var cameraWatch: [Any] = []
 
     init(settings: UseSettings) {
         self.settings = settings
         bridge.onEvent = { [weak self] in self?.handle($0) }
+        cameraWatch = CameraQueries.observe { [weak self] in self?.refreshCameras() }
+        refreshCameras()
         bridge.onExit = { [weak self] reason in
             guard let self else { return }
             if self.status == .ready { self.status = .failed(reason) }
@@ -53,6 +59,14 @@ final class UseLeRobot {
             let hello = try await bridge.request("hello")
             env = LeRobotEnv(version: hello["lerobot"] as? String ?? "?", hubUser: hello["hf_user"] as? String,
                              smolvla: hello["smolvla"] as? Bool ?? false)
+            let kinds = try await bridge.request("robot_types")
+            func parse(_ list: Any?) -> [RobotKind] {
+                (list as? [[String: Any]] ?? []).map {
+                    RobotKind(type: $0["type"] as? String ?? "", port: $0["port"] as? Bool ?? true, calibration: $0["calibration"] as? String)
+                }
+            }
+            robotKinds = parse(kinds["robots"])
+            teleopKinds = parse(kinds["teleoperators"])
             let calib = try await bridge.request("calibrations")
             calibrations = Calibrations(robots: calib["robots"] as? [String: [String]] ?? [:],
                                         teleoperators: calib["teleoperators"] as? [String: [String]] ?? [:])
@@ -65,29 +79,57 @@ final class UseLeRobot {
     /// Vuelve a buscar cámaras (por si se enchufó una).
     func refreshCameras() {
         let found = CameraQueries.list()
-        if found != cameras { cameras = found }
+        if found != cameras {
+            cameras = found
+            // Queda escrito qué cámaras ve la app y con qué número, para revisar si alguna no aparece.
+            let line = "\(Date().formatted(date: .omitted, time: .standard)) " + found.map { "\($0.index):\($0.name)" }.joined(separator: ", ") + "\n"
+            let url = AppPaths.logs.appendingPathComponent("cameras.log")
+            if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
+            else { try? Data(line.utf8).write(to: url) }
+        }
     }
 
     /// Revisa cada pieza sin mover nada: permiso de cámara, follower, leader (si `withLeader`), poses y cámara.
-    func preflight(_ d: Device, withLeader: Bool, withExtras: Bool = false) async -> (checks: [PreflightCheck], picture: Data?) {
+    /// - withCamera: si la acción usa cámaras (moverlo con el leader no).
+    /// - roles: al probar un modelo, el nombre que el modelo da a cada cámara (p. ej. up, side), en orden.
+    func preflight(_ d: Device, withLeader: Bool, withCamera: Bool = true, withExtras: Bool = false, roles: [String] = []) async -> [PreflightCheck] {
         refreshCameras()
         if status != .ready { await start() }
-        guard await PermissionQueries.camera() else {
-            return ([PreflightCheck(key: "permission", state: .fail,
-                                    detail: "Curiosity doesn't have permission to use the camera. Turn it on in System Settings.")], nil)
+        var pre: [PreflightCheck] = []
+        if withLeader && (d.leaderPort == nil || d.leaderID == nil) {
+            return [PreflightCheck(key: "leader", state: .fail, detail: "Choose the leader's port and calibration below.")]
         }
-        var args = base(d).merging(["camera": camera(d)]) { $1 }
+        var args = base(d)
         if withLeader { args.merge(leader(d)) { $1 } }
-        if withExtras { args["extra_cameras"] = extraCameras(d).map(\.index) }
+        let extras = withExtras ? extraCameras(d) : []
+        if withCamera {
+            guard await PermissionQueries.camera() else {
+                return [PreflightCheck(key: "permission", state: .fail,
+                                       detail: "Curiosity doesn't have permission to use the camera. Turn it on in System Settings.")]
+            }
+            args["camera"] = camera(d)
+            args["extra_cameras"] = extras.map(\.index)
+            if roles.count > 1 + extras.count {
+                pre.append(PreflightCheck(key: "cameras", state: .fail,
+                                          detail: "This model looks through \(roles.count) cameras (\(roles.joined(separator: ", "))) and only \(1 + extras.count) is chosen."))
+            }
+        }
+        // Cada cámara con su nombre (y el que le da el modelo), para ver exactamente qué se va a usar.
+        let names = [cameras.first { $0.index == mainCamera(d) }?.name ?? "Camera"] + extras.map(\.name)
+        func label(_ key: String) -> String? {
+            let i = key == "camera" ? 0 : key.hasPrefix("cam") ? Int(key.dropFirst(3)) : nil
+            guard let i, names.indices.contains(i) else { return nil }
+            return roles.indices.contains(i) ? "\(roles[i]) · \(names[i])" : names[i]
+        }
         do {
             let r = try await bridge.request("preflight", args)
             let checks = (r["checks"] as? [[String: Any]] ?? []).compactMap { c -> PreflightCheck? in
                 guard let key = c["key"] as? String, let state = (c["state"] as? String).flatMap(PreflightCheck.State.init) else { return nil }
-                return PreflightCheck(key: key, state: state, detail: c["detail"] as? String ?? "")
+                return PreflightCheck(key: key, state: state, detail: c["detail"] as? String ?? "", label: label(key))
             }
-            return (checks, (r["jpeg"] as? String).flatMap { Data(base64Encoded: $0) })
+            return pre + checks
         } catch {
-            return ([PreflightCheck(key: "bridge", state: .fail, detail: LeRobotErrors.friendly(error.localizedDescription))], nil)
+            return pre + [PreflightCheck(key: "bridge", state: .fail, detail: LeRobotErrors.friendly(error.localizedDescription))]
         }
     }
 
@@ -133,7 +175,7 @@ final class UseLeRobot {
     func runPolicy(_ d: Device, modelPath: String, task: String, seconds: Double) async {
         refreshCameras()
         await startSession("rollout", base(d).merging([
-            "camera": camera(d), "policy_path": modelPath, "task": task, "duration": seconds, "max_relative_target": 10,
+            "camera": camera(d), "extra_cameras": extraCameras(d).map(\.index), "policy_path": modelPath, "task": task, "duration": seconds, "max_relative_target": 10,
         ]) { $1 })
     }
 
@@ -150,6 +192,14 @@ final class UseLeRobot {
         _ = try await bridge.request("live_trajectory", ["points": points, "speed": speed])
     }
     func liveHome() async throws { _ = try await bridge.request("live_home") }
+
+    /// Carga un modelo de órdenes (carpeta local o id del Hub) en la sesión en vivo. Tarda la primera vez.
+    func liveSkillLoad(_ path: String) async throws { _ = try await bridge.request("live_skill_load", ["policy_path": path]) }
+    /// El modelo hace `instruction` durante `seconds` como mucho (los controles o «parar» lo cortan).
+    func liveSkill(_ instruction: String, seconds: Double) async throws {
+        _ = try await bridge.request("live_skill", ["instruction": instruction, "seconds": seconds])
+    }
+    func liveSkillStop() async throws { _ = try await bridge.request("live_skill_stop") }
 
     /// Una foto grande de cada cámara mientras está en vivo (para la IA): [(cámara, JPEG)].
     func liveLook() async throws -> [(camera: String, jpeg: Data)] {
@@ -184,8 +234,20 @@ final class UseLeRobot {
 
     // MARK: - Interno
 
-    private func base(_ d: Device) -> [String: Any] { ["follower_port": d.id, "follower_id": d.followerID ?? ""] }
-    private func leader(_ d: Device) -> [String: Any] { ["leader_port": d.leaderPort ?? "", "leader_id": d.leaderID ?? ""] }
+    private func base(_ d: Device) -> [String: Any] {
+        ["robot_type": d.robotKind ?? "", "follower_port": d.id, "follower_id": d.followerID ?? ""]
+    }
+    private func leader(_ d: Device) -> [String: Any] {
+        ["teleop_type": d.teleopKind ?? "", "leader_port": d.leaderPort ?? "", "leader_id": d.leaderID ?? ""]
+    }
+
+    /// Las calibraciones guardadas para el tipo de robot y de leader de este dispositivo.
+    func followers(_ d: Device) -> [String] {
+        robotKinds.first { $0.type == d.robotKind }?.calibration.flatMap { calibrations.robots[$0] } ?? []
+    }
+    func leaders(_ d: Device) -> [String] {
+        teleopKinds.first { $0.type == d.teleopKind }?.calibration.flatMap { calibrations.teleoperators[$0] } ?? []
+    }
     private func camera(_ d: Device) -> [String: Any] { ["index": mainCamera(d) ?? 0, "width": 640, "height": 480, "fps": 30] }
 
     /// El número actual de la cámara principal. Se busca por nombre: macOS renumera las cámaras al enchufar otra.
@@ -236,6 +298,18 @@ final class UseLeRobot {
         s.limit = (e["limit"] as? NSNumber)?.doubleValue ?? 0
         s.targets = (e["targets"] as? [String: NSNumber])?.mapValues(\.doubleValue) ?? [:]
         s.playing = e["playing"] as? Bool ?? false
+        s.cameras = e["cameras"] as? [String] ?? []
+        s.jointNames = e["joint_names"] as? [String] ?? []
+        s.units = e["units"] as? [String: String] ?? [:]
+        if let m = e["skill_model"] as? [String: Any], let path = m["path"] as? String {
+            s.skillModel = SkillModel(path: path, type: m["type"] as? String ?? "", device: m["device"] as? String ?? "", note: m["note"] as? String)
+        }
+        if let k = e["skill"] as? [String: Any], let text = k["instruction"] as? String {
+            s.skill = SkillRun(instruction: text, elapsed: (k["elapsed"] as? NSNumber)?.doubleValue ?? 0, limit: (k["limit"] as? NSNumber)?.doubleValue ?? 0)
+        }
+        if let k = e["skill_last"] as? [String: Any], let text = k["instruction"] as? String {
+            s.skillLast = SkillResult(instruction: text, reason: k["reason"] as? String ?? "", seconds: (k["seconds"] as? NSNumber)?.doubleValue ?? 0)
+        }
         s.limits = (e["limits"] as? [String: [NSNumber]] ?? [:]).compactMapValues { v in
             v.count == 2 && v[0].doubleValue <= v[1].doubleValue ? v[0].doubleValue...v[1].doubleValue : nil
         }

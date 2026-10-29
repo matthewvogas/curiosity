@@ -4,6 +4,8 @@
 // Colisiones: el robot no choca consigo mismo salvo que se active (contype 2 / conaffinity 1 contra 3);
 // el piso y los objetos chocan con todo.
 
+import { partsOf, volume, quatFromEuler, objectQuat, mujocoSize } from "./objects.js";
+
 export const ROBOT_BITS = { contype: 2, conaffinity: 1 }, SELF_BITS = 3, WORLD_BITS = { contype: 1, conaffinity: 3 };
 
 const f = (n) => (Math.abs(n) < 1e-12 ? "0" : String(+Number(n).toPrecision(7)));
@@ -102,11 +104,16 @@ const rgba = (hex) => {
 /** La escena: el robot (incluido tal cual), el piso y los objetos libres. */
 export function sceneXML(robotFile, objects, params) {
   const bodies = objects.map((o) => {
-    const yaw = (o.yaw || 0) * Math.PI / 360;
-    const quat = `${f(Math.cos(yaw))} 0 0 ${f(Math.sin(yaw))}`;
-    const size = o.shape === "sphere" ? f(o.size[0]) : o.shape === "cylinder" ? `${f(o.size[0])} ${f(o.size[1] / 2)}` : v3(o.size.map((x) => x / 2));
-    return `    <body name="cu_obj_${o.id}" pos="${v3(o.pos)}" quat="${quat}">${o.fixed ? "" : `<freejoint name="cu_obj_${o.id}"/>`}
-      <geom type="${o.shape === "sphere" ? "sphere" : o.shape === "cylinder" ? "cylinder" : "box"}" size="${size}" mass="${f(Math.max(o.mass, 1e-4))}" rgba="${rgba(o.color)}" contype="${WORLD_BITS.contype}" conaffinity="${WORLD_BITS.conaffinity}" condim="3" friction="${f(params.friction)} 0.005 0.0001"/>
+    const parts = partsOf(o);
+    const total = parts.reduce((v, p) => v + volume(p), 0) || 1;
+    const mass = Math.max(Number(o.mass) || 0.05, 1e-4);
+    // Cada pieza lleva la parte de la masa que le toca por su volumen (un escritorio pesa en la tabla y las patas).
+    const geoms = parts.map((p) => {
+      const type = p.shape === "sphere" ? "sphere" : p.shape === "cylinder" ? "cylinder" : p.shape === "capsule" ? "capsule" : "box";
+      return `<geom type="${type}" size="${v3(mujocoSize(p))}" pos="${v3(p.pos)}" quat="${wxyz(quatFromEuler(p.euler))}" mass="${f(Math.max((mass * volume(p)) / total, 1e-5))}" rgba="${rgba(p.color)}" contype="${WORLD_BITS.contype}" conaffinity="${WORLD_BITS.conaffinity}" condim="3" friction="${f(params.friction)} 0.005 0.0001"/>`;
+    });
+    return `    <body name="cu_obj_${o.id}" pos="${v3(o.pos)}" quat="${wxyz(objectQuat(o))}">${o.fixed ? "" : `<freejoint name="cu_obj_${o.id}"/>`}
+      ${geoms.join("\n      ")}
     </body>`;
   });
   return `<mujoco model="curiosity">

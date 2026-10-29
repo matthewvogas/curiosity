@@ -1,0 +1,70 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 640px;
+  height: 100%;
+  margin: 0 auto;
+  padding: var(--s-2) var(--s-5) var(--s-5);
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--r-l);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.toolbar {
+  display: flex;
+  gap: 2px;
+  padding: var(--s-1);
+  border-bottom: 1px solid var(--line);
+}
+.loading {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  color: var(--muted);
+}
+.editor {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--s-3) var(--s-4);
+  outline: none;
+  font-size: var(--text-m);
+  line-height: 1.6;
+  color: var(--ink);
+  user-select: text;
+  cursor: text;
+}
+.editor[hidden] {
+  display: none;
+}
+.editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--faint);
+  pointer-events: none;
+}
+.editor h1,
+.editor h2,
+.editor h3 {
+  margin: var(--s-3) 0 var(--s-1);
+  font-size: var(--text-l);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.editor p,
+.editor div {
+  margin: 0;
+}
+.editor ul,
+.editor ol {
+  margin: var(--s-1) 0;
+  padding-left: var(--s-5);
+}
+.editor a {
+  color: var(--blue);
+}

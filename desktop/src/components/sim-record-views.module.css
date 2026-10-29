@@ -1,0 +1,80 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.counter {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 30px;
+}
+.counterLabel {
+  flex: 1;
+  color: var(--muted);
+}
+.counterValue {
+  margin-right: var(--s-2);
+  font-variant-numeric: tabular-nums;
+}
+.keys {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  font-size: var(--text-xs);
+  color: var(--faint);
+}
+.keys kbd {
+  margin-left: var(--s-1);
+}
+
+/* Flota sobre la simulación: lleva sombra. */
+.bar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  box-shadow: var(--shadow-pop);
+}
+.state {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  color: var(--muted);
+}
+.recDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-right: var(--s-1);
+}
+.title {
+  font-size: var(--text-m);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.clock {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 var(--s-1);
+  background: var(--line-strong);
+}

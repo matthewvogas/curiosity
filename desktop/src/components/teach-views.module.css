@@ -1,0 +1,375 @@
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Sin tareas ---------- */
+.emptyWrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-4);
+  height: 100%;
+  min-height: 360px;
+  padding: var(--s-6);
+}
+.emptyCancel {
+  position: absolute;
+  top: var(--s-3);
+  right: var(--s-3);
+}
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-l);
+  color: var(--muted);
+  background: var(--fill);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.emptyTitle {
+  margin: 0 0 var(--s-2);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.composer {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  max-width: 520px;
+  padding: 6px 6px 6px var(--s-4);
+  border-radius: 18px;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.composer:focus-within {
+  box-shadow: inset 0 0 0 1px var(--focus);
+}
+.composerInput {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-l);
+}
+.composerInput::placeholder {
+  color: var(--faint);
+}
+.send {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  flex: none;
+}
+.send:disabled {
+  opacity: 0.3;
+}
+.ideas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+}
+.ideasLabel {
+  font-size: var(--text-xs);
+  color: var(--faint);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-2);
+}
+.chip {
+  height: 28px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-pill);
+  font-size: var(--text-s);
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: background var(--fast), color var(--fast);
+}
+.chip:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* ---------- Grabando ---------- */
+.center {
+  display: flex;
+  justify-content: center;
+  height: 100%;
+  overflow: auto;
+  padding: var(--s-6);
+}
+.recording {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-5);
+  width: 100%;
+  max-width: 720px;
+}
+.picture {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border-radius: var(--r-l);
+  background: var(--stage);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.pictureWait {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  color: var(--muted);
+}
+/* La cámara con el estado encima y, pegada debajo, el avance. */
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  width: 100%;
+}
+.stage {
+  position: relative;
+  width: 100%;
+}
+.overlayTop {
+  position: absolute;
+  inset: var(--s-3) var(--s-3) auto var(--s-3);
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: rgba(10, 10, 12, 0.62);
+  backdrop-filter: blur(12px);
+  color: var(--ink);
+  font-size: var(--text-s);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.pillRec {
+  color: #fff;
+}
+.pillTime {
+  margin-left: 2px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.pillDim {
+  color: var(--faint);
+  font-weight: 500;
+}
+.overlayCenter {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  border-radius: var(--r-l);
+  background: rgba(10, 10, 12, 0.55);
+  backdrop-filter: blur(4px);
+  font-size: var(--text-m);
+  color: var(--ink);
+}
+.recDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Cuántas van: un segmento por demostración. */
+.progress {
+  display: flex;
+  gap: 3px;
+  width: 100%;
+}
+.progressStep {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  transition: background var(--fast);
+}
+.progressStep[data-state="done"] {
+  background: var(--ink);
+}
+.progressStep[data-state="now"] {
+  background: var(--red);
+}
+
+/* Una sola barra de controles. */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  color: var(--muted);
+  font-size: var(--text-m);
+  font-weight: 500;
+  transition: background var(--fast), color var(--fast), opacity var(--fast);
+}
+.control:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+.control:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.controlMain {
+  padding: 0 18px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.controlMain:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--on-accent);
+  filter: brightness(0.92);
+}
+.controlStop:hover:not(:disabled) {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.control kbd {
+  opacity: 0.55;
+}
+
+.runActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+/* ---------- Probando el modelo ---------- */
+.running {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-4);
+  height: 100%;
+  padding: var(--s-5);
+}
+.tiles {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+.allHidden {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--muted);
+}
+.frame {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.frameWait {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--muted);
+}
+.runStatus {
+  font-size: var(--text-l);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Hugging Face ---------- */
+.hub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  height: 100%;
+  min-height: 0;
+}
+.hub p {
+  margin: 0;
+}
+.hubSearch {
+  display: flex;
+  gap: var(--s-2);
+}
+.hubSearch > input {
+  flex: 1;
+}
+.hubList {
+  flex: 1;
+  min-height: 280px;
+  overflow: auto;
+  border-radius: var(--r-m);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.hubEmpty {
+  padding: var(--s-4);
+  font-size: var(--text-s);
+}
+.hubRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--line);
+}
+.hubRow:last-child {
+  border-bottom: 0;
+}
+.hubText {
+  flex: 1;
+  min-width: 0;
+}

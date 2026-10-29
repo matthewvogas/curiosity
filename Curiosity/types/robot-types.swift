@@ -81,6 +81,64 @@ struct SceneObject: Identifiable, Equatable, Codable {
     var yaw: Double = 0
     var fixed = false
     var name = ""
+    /// Si está, el objeto se arma con estas piezas (una rueda, un escritorio…) en lugar de `shape`/`size`.
+    var parts: [ObjectPart]?
+    /// Giro completo en grados [x, y, z]; si no está, solo `yaw`.
+    var euler: [Double]?
+
+    /// Lo que mide (largo x, ancho y, alto z, en metros) en su propio marco, aproximado por sus piezas.
+    var extent: [Double] {
+        guard let parts, !parts.isEmpty else { return Self.halfSize(shape: shape, size: size).map { $0 * 2 } }
+        var lo = [Double.infinity, .infinity, .infinity], hi = [-Double.infinity, -.infinity, -.infinity]
+        for p in parts where p.pos.count == 3 {
+            var half = Self.halfSize(shape: p.shape, size: p.size)
+            // Una pieza girada: se toma su medida mayor en todas las direcciones (cota segura).
+            if p.euler.contains(where: { $0 != 0 }) { half = Array(repeating: half.max() ?? 0, count: 3) }
+            for i in 0..<3 {
+                lo[i] = min(lo[i], p.pos[i] - half[i])
+                hi[i] = max(hi[i], p.pos[i] + half[i])
+            }
+        }
+        return (0..<3).map { lo[$0].isFinite ? hi[$0] - lo[$0] : 0 }
+    }
+
+    /// El color con que se ve (el de su primera pieza, si tiene).
+    var displayColor: String { parts?.first?.color ?? color }
+
+    /// Medio tamaño de una forma simple: caja [x, y, z] · esfera [r] · cilindro [r, alto] · cápsula [r, largo].
+    private static func halfSize(shape: String, size: [Double]) -> [Double] {
+        let a = size.first ?? 0, b = size.count > 1 ? size[1] : a
+        switch shape {
+        case "sphere": return [a, a, a]
+        case "cylinder": return [a, a, b / 2]
+        case "capsule": return [a, a, b / 2 + a]
+        default: return [a / 2, b / 2, (size.count > 2 ? size[2] : a) / 2]
+        }
+    }
+}
+
+/// Una pieza de un objeto compuesto (metros, grados), relativa al centro del objeto.
+struct ObjectPart: Equatable, Codable {
+    var shape: String          // box · sphere · cylinder · capsule
+    var size: [Double]
+    var pos: [Double]
+    var euler: [Double] = [0, 0, 0]
+    var color: String
+
+    private enum CodingKeys: String, CodingKey { case shape, size, pos, euler, color }
+
+    init(shape: String, size: [Double], pos: [Double], euler: [Double] = [0, 0, 0], color: String) {
+        self.shape = shape; self.size = size; self.pos = pos; self.euler = euler; self.color = color
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        shape = try c.decodeIfPresent(String.self, forKey: .shape) ?? "box"
+        size = try c.decodeIfPresent([Double].self, forKey: .size) ?? []
+        pos = try c.decodeIfPresent([Double].self, forKey: .pos) ?? [0, 0, 0]
+        euler = try c.decodeIfPresent([Double].self, forKey: .euler) ?? [0, 0, 0]
+        color = try c.decodeIfPresent(String.self, forKey: .color) ?? "#9a9a9f"
+    }
 }
 
 struct PhysicsSettings: Equatable {

@@ -18,8 +18,11 @@ struct KnowledgePackage: Identifiable, Codable, Equatable {
     var poses: [Pose]
     var segments: [Segment]
     var tips: [String]
-    /// Trayectorias de las demostraciones estudiadas, en grados: episodio → [[t, articulaciones…]].
+    /// Trayectorias de las demostraciones estudiadas: episodio → [[t, articulaciones…]], en el orden de `joints`.
     var trajectories: [String: [[Double]]]
+    /// Las articulaciones de las trayectorias, en orden. Los paquetes guardados antes no la tienen: eran del SO-101.
+    var joints: [String]?
+    var jointOrder: [String] { joints ?? ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"] }
     /// Unas fotos de referencia (momentos clave), para que la IA compare con lo que ve.
     var pictures: [Picture]
 }
@@ -29,6 +32,8 @@ struct StudyMaterial {
     struct Episode { var index: Int; var task: String; var duration: Double; var trajectory: [[Double]]; var events: [[String: Any]] }
     var repoID: String
     var info: [String: Any]
+    /// Las articulaciones de las trayectorias, en orden.
+    var joints: [String]
     var episodes: [Episode]
     var pictures: [(episode: Int, label: String, jpeg: Data)]
 }

@@ -4,6 +4,7 @@ import Foundation
 extension UseSimulation: ChatBody {
     var chatTools: [[String: Any]] { AgentTools.definitions }
     var chatNotReady: String { "Wait for the robot to finish loading." }
+    var chatRobotFacts: [String]? { robotFacts }
 
     func chatSystemPrompt(robotName: String) -> String? {
         model.map { AgentTools.systemPrompt(model: $0, robotName: robotName) }
@@ -37,8 +38,39 @@ extension UseSimulation: ChatBody {
             return .text(AgentTools.json(out), problem: unknown.isEmpty ? nil : "No motor or doesn't exist: \(unknown.joined(separator: ", "))")
 
         case "look":
-            let camera = (input["camera"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            return .images([("", try await capture(camera: camera))])
+            let camera = (input["camera"] as? String).flatMap { model.cameras.contains($0) ? $0 : nil }
+            guard let camera else { return .text("There's no camera with that name. Cameras: \(model.cameras.joined(separator: ", ")).", problem: "Unknown camera") }
+            return .images([try await photo(camera)])
+
+        case "pick", "place", "gripper":
+            var spec: [String: Any] = ["type": name]
+            if name == "gripper" {
+                spec["open"] = input["open"] as? Bool ?? true
+            } else {
+                guard let camera = input["camera"] as? String, model.cameras.contains(camera) else {
+                    return .text("There's no camera with that name. Cameras: \(model.cameras.joined(separator: ", ")).", problem: "Unknown camera")
+                }
+                spec["camera"] = camera
+                spec["imageWidth"] = Self.photoWidth
+                let n = { (k: String) in (input[k] as? NSNumber)?.doubleValue ?? 0 }
+                if name == "pick" {
+                    spec["fingers"] = [[n("finger_a_x"), n("finger_a_y")], [n("finger_b_x"), n("finger_b_y")]]
+                } else {
+                    spec["x"] = n("x")
+                    spec["y"] = n("y")
+                }
+                spec["height"] = ((input["height_cm"] as? NSNumber)?.doubleValue ?? 2.5) / 100
+                spec["surface"] = ((input["surface_cm"] as? NSNumber)?.doubleValue ?? 0) / 100
+            }
+            let outcome = try await skill(spec)
+            var out = outcome
+            out["joints"] = chatState(model)["joints"]
+            // Una foto de la misma cámara para que vea cómo quedó (la fija de la mesa si fue solo la pinza).
+            let camera = (input["camera"] as? String).flatMap { model.cameras.contains($0) ? $0 : nil } ?? model.cameras.last
+            var picture: [(label: String, jpeg: Data)] = []
+            if let camera { picture.append(try await photo(camera)) }
+            let failed = outcome["done"] as? Bool == false
+            return .report(AgentTools.json(out), photos: picture, problem: failed ? (outcome["message"] as? String ?? outcome["reason"] as? String) : nil)
 
         case "add_object":
             let size = Units.meters((input["size_cm"] as? [NSNumber] ?? []).map(\.doubleValue))
@@ -50,6 +82,11 @@ extension UseSimulation: ChatBody {
                                      pos: pos.count == 3 ? pos : [0.2, 0, 0.1])
             let newID = try await addObject(object)
             return .text(AgentTools.json(["id": newID]))
+
+        case "create_object":
+            let (id, object) = try await designObject(input["description"] as? String ?? "")
+            return .text(AgentTools.json(["id": id, "name": object.name, "size_cm": Units.centimeters(object.extent),
+                                          "mass_kg": object.mass]))
 
         case "remove_object":
             removeObject((input["id"] as? NSNumber)?.intValue ?? -1)
@@ -66,6 +103,14 @@ extension UseSimulation: ChatBody {
     }
 
     private func chatState(_ model: RobotModel) -> [String: Any] {
-        AgentTools.describe(state: state, model: model, objects: objects)
+        AgentTools.describe(state: state, model: model)
+    }
+
+    private static let photoWidth = 768
+
+    /// Una foto de una cámara con la cuadrícula de píxeles y su tamaño, para poder señalar.
+    private func photo(_ camera: String) async throws -> (label: String, jpeg: Data) {
+        let size = try await cameraSize(camera)
+        return ("\(camera) (\(size.width)×\(size.height) px)", try await capture(camera: camera, grid: true))
     }
 }

@@ -25,7 +25,7 @@ final class UseKnowledge {
     var active: KnowledgePackage? { packages.first { $0.id == activeID } }
 
     /// Estudia un dataset (`root` para los de esta Mac; sin él se baja del Hub solo lo necesario).
-    func study(repoID: String, root: String?, followerID: String?) async {
+    func study(repoID: String, root: String?, robotType: String?, followerID: String?) async {
         guard studying == nil else { return }
         guard let key = settings.anthropicKey else { error = "Add your API key in Settings."; return }
         error = nil
@@ -36,16 +36,18 @@ final class UseKnowledge {
             var args: [String: Any] = ["repo_id": repoID, "episodes": 6]
             if let root { args["root"] = root }
             if let followerID { args["follower_id"] = followerID }
+            if let robotType { args["robot_type"] = robotType }
             let material = Self.material(try await lerobot.request("study", args), repoID: repoID)
             guard !material.episodes.isEmpty else { throw Self.fail("The dataset has no readable demonstrations.") }
 
             studying = "Studying \(material.episodes.count) demonstrations…"
             let response = try await AnthropicQueries.createMessage(apiKey: key, body: [
                 "model": settings.modelID,
-                "max_tokens": 8000,
-                "system": KnowledgePrompt.studySystem,
+                "max_tokens": 16000,
+                "system": KnowledgePrompt.studySystem + "\n\nAnswer only by calling write_package, exactly once.",
                 "tools": [KnowledgePrompt.writePackage],
-                "tool_choice": ["type": "tool", "name": "write_package"],
+                // Los modelos actuales (Opus 5.5, Sonnet 5.5, Fable 5.1) no aceptan forzar la herramienta: se le pide.
+                "tool_choice": ["type": "auto"],
                 "messages": [["role": "user", "content": KnowledgePrompt.studyMessage(material)]],
             ])
             guard let input = (response["content"] as? [[String: Any]] ?? [])
@@ -78,7 +80,7 @@ final class UseKnowledge {
             guard let d = (k["jpeg"] as? String).flatMap({ Data(base64Encoded: $0) }) else { return nil }
             return ((k["episode"] as? NSNumber)?.intValue ?? 0, k["label"] as? String ?? "", d)
         }
-        return StudyMaterial(repoID: repoID, info: r, episodes: episodes, pictures: pictures)
+        return StudyMaterial(repoID: repoID, info: r, joints: r["joints"] as? [String] ?? [], episodes: episodes, pictures: pictures)
     }
 
     private static func fail(_ text: String) -> NSError {

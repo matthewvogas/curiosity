@@ -1,0 +1,171 @@
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  height: 100vh;
+}
+/* Sin barra lateral (que sale del flujo con display: none), el área de trabajo ocupa la única columna. */
+.shell[data-sidebar="false"] {
+  grid-template-columns: 1fr;
+}
+
+/* ---------- Barra lateral ---------- */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--sidebar);
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+}
+.sidebarTop {
+  height: var(--titlebar);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 0 8px;
+}
+/* En macOS los semáforos ocupan la esquina: el contenido empieza más abajo. */
+.sidebarTop[data-platform="macos"] {
+  padding-left: 84px;
+}
+.sidebarTop[data-platform="windows"],
+.sidebarTop[data-platform="linux"] {
+  justify-content: space-between;
+}
+
+/* ---------- Área principal ---------- */
+.main {
+  background: var(--bg);
+  display: grid;
+  grid-template-columns: 1fr;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.main[data-inspector="true"] {
+  grid-template-columns: minmax(0, 1fr) var(--inspector-w);
+}
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.header {
+  height: var(--titlebar);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+/* Lo del centro (Teach/Live, pestañas) queda centrado en la ventana, como en la versión de macOS. */
+.headerCenter {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  z-index: 1;
+}
+.header {
+  position: relative;
+}
+/* macOS sin barra lateral: el encabezado empieza después de los semáforos. */
+.shell[data-sidebar="false"][data-platform="macos"] .pane .header {
+  padding-left: 84px;
+}
+/* En el inspector, las pestañas ocupan el ancho que dejan los botones. */
+.inspectorCenter {
+  flex: 1;
+  min-width: 0;
+}
+.inspectorCenter [role="tablist"] {
+  width: 100%;
+}
+/* Cada pestaña mide lo que su nombre: «Knowledge» cabe junto a «Arm». */
+.inspectorCenter [role="tab"] {
+  flex: 1 1 auto;
+  min-width: 0 !important;
+  padding: 0 6px;
+  font-size: var(--text-s);
+}
+.shell[data-sidebar="false"] .sidebar {
+  display: none;
+}
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.headerSpacer {
+  flex: 1;
+  align-self: stretch;
+}
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ---------- Inspector (panel derecho) ---------- */
+.inspector {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+.inspector .header {
+  padding: 0 8px 0 12px;
+}
+/* En Windows los botones de la ventana van arriba a la derecha. */
+.captionSafe {
+  padding-right: 146px !important;
+}
+
+/* ---------- Botones de ventana (Windows y Linux) ---------- */
+.caption {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: var(--titlebar);
+  display: flex;
+  z-index: 40;
+}
+.captionButton {
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.captionButton:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.captionClose:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.inspector .headerSpacer {
+  flex: 0 0 4px;
+}

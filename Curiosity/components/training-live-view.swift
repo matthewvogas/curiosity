@@ -56,12 +56,10 @@ struct TrainingLiveView: View {
                     .chartXAxisLabel("step")
                     .frame(height: 180)
                 } else {
-                    Text("The curve appears with the first log entries (every 200 steps).")
+                    Text("Waiting for the first steps")
                         .font(.callout).foregroundStyle(Theme.muted)
                         .frame(maxWidth: .infinity, minHeight: 80)
                 }
-                Text("Lower is better. When it flattens out, it has learned what it can from this data.")
-                    .font(.caption).foregroundStyle(Theme.muted)
             }
 
             VStack(alignment: .leading, spacing: Theme.Space.s) {

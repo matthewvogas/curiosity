@@ -2,3 +2,5 @@ build/
 Curiosity.xcodeproj/
 .DS_Store
 xcuserdata/
+__pycache__/
+*.pyc

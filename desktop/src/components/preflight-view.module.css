@@ -1,0 +1,86 @@
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  font-size: var(--text-m);
+}
+.title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.checking {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--muted);
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+}
+.icon {
+  flex: none;
+  width: 18px;
+  display: grid;
+  place-items: center;
+  padding-top: 1px;
+}
+.icon[data-state="ok"] {
+  color: var(--green);
+}
+.icon[data-state="warn"] {
+  color: var(--amber);
+}
+.icon[data-state="fail"] {
+  color: var(--red);
+}
+.checkText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+.detail {
+  color: var(--muted);
+  line-height: 1.45;
+}
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font-size: var(--text-m);
+}
+.link:hover {
+  text-decoration: underline;
+}
+.leader {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+}
+.warning {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.spacer {
+  flex: 1;
+}

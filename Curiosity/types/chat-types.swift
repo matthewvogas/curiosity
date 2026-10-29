@@ -30,6 +30,12 @@ protocol ChatBody: AnyObject {
     /// Lo que la persona tiene que aprobar antes de correr la herramienta (nil: no hace falta).
     func chatApproval(_ name: String, _ input: [String: Any]) -> String?
     func chatRun(_ name: String, _ input: [String: Any]) async throws -> ChatToolOutput
+    /// Lo que la app midió del robot (brazo, pinza, cámaras), para describírselo a la IA; nil si aún no se sabe.
+    var chatRobotFacts: [String]? { get }
+}
+
+extension ChatBody {
+    var chatRobotFacts: [String]? { nil }
 }
 
 /// Lo que devuelve una herramienta: texto para la IA (y un aviso si algo no salió), o una imagen.
@@ -37,6 +43,8 @@ enum ChatToolOutput {
     case text(String, problem: String? = nil)
     /// Fotos con su nombre (la cámara de donde salen; vacío si hay una sola).
     case images([(label: String, jpeg: Data)])
+    /// Texto y fotos juntos (p. ej. cómo terminó una orden y cómo quedó la mesa), en una sola vuelta.
+    case report(String, photos: [(label: String, jpeg: Data)], problem: String? = nil)
 }
 
 /// Una conversación guardada con un robot: lo que se ve y la historia para seguirla con la API.

@@ -1,18 +1,28 @@
 import SwiftUI
 
-/// Antes de grabar o probar: cada pieza revisada (sin mover nada), lo que ve la cámara y qué va a pasar.
+/// El leader, para elegirlo ahí mismo cuando la acción lo necesita.
+struct PreflightLeader {
+    let ports: [String]
+    let calibrations: [String]
+    @Binding var port: String?
+    @Binding var id: String?
+}
+
+/// Antes de grabar o probar: cada pieza que se va a usar, revisada (sin mover nada), y qué va a pasar.
 /// Empezar solo se habilita cuando nada falla. Solo dibuja: todo por props.
 struct PreflightView: View {
     let title: String
     let checks: [PreflightCheck]
-    let picture: Data?
+    /// Si la acción necesita el leader (grabar, moverlo con el leader).
+    let leader: PreflightLeader?
     let checking: Bool
     let warning: String
     let startTitle: String
     let onRetry: () -> Void
     let onStart: () -> Void
     let onCancel: () -> Void
-    let onFix: () -> Void
+    /// Arreglar una revisión que falló (recibe su clave).
+    let onFix: (String) -> Void
     let onOpenPrivacy: () -> Void
 
     private var failed: Bool { checks.contains { $0.state == .fail } }
@@ -21,8 +31,7 @@ struct PreflightView: View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             Text(title).font(.title2.weight(.semibold))
 
-            HStack(alignment: .top, spacing: Theme.Space.l) {
-                VStack(alignment: .leading, spacing: Theme.Space.m) {
+            VStack(alignment: .leading, spacing: Theme.Space.m) {
                     if checking && checks.isEmpty {
                         HStack(spacing: Theme.Space.s) { ProgressView().controlSize(.small); Text("Checking each part…").foregroundStyle(Theme.muted) }
                     }
@@ -32,9 +41,8 @@ struct PreflightView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(c.title)
                                 Text(c.detail).font(.callout).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
-                                if c.state == .fail {
-                                    Button(c.key == "permission" ? "Open System Settings" : "Robot settings",
-                                           action: c.key == "permission" ? onOpenPrivacy : onFix)
+                                if c.state == .fail && c.key != "leader" {
+                                    Button(fixTitle(c.key), action: { c.key == "permission" ? onOpenPrivacy() : onFix(c.key) })
                                         .buttonStyle(.link).font(.callout)
                                 }
                             }
@@ -43,16 +51,23 @@ struct PreflightView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Group {
-                    if let picture, let image = NSImage(data: picture) {
-                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-                    } else {
-                        Rectangle().fill(Theme.fill).aspectRatio(4 / 3, contentMode: .fit)
-                            .overlay(Image(systemName: "video.slash").foregroundStyle(Theme.faint))
+            if let leader {
+                // El leader se elige aquí mismo; «Check again» lo revisa.
+                Form {
+                    Picker("Leader port", selection: leader.$port) {
+                        Text("Choose…").tag(String?.none)
+                        ForEach(leader.ports, id: \.self) { Text($0.replacingOccurrences(of: "/dev/cu.", with: "")).tag(String?.some($0)) }
+                    }
+                    Picker("Leader calibration", selection: leader.$id) {
+                        Text("Choose…").tag(String?.none)
+                        ForEach(leader.calibrations, id: \.self) { Text($0).tag(String?.some($0)) }
                     }
                 }
-                .frame(width: 220)
-                .clipShape(.rect(cornerRadius: 10))
+                .formStyle(.grouped)
+                .scrollDisabled(true)
+                .frame(height: 110)
+                .onChange(of: leader.port) { onRetry() }
+                .onChange(of: leader.id) { onRetry() }
             }
 
             if !failed && !checks.isEmpty {
@@ -71,6 +86,14 @@ struct PreflightView: View {
         }
         .padding(Theme.Space.xl)
         .frame(width: 600)
+    }
+
+    private func fixTitle(_ key: String) -> String {
+        switch key {
+        case "permission": "Open System Settings"
+        case "cameras", "camera", _ where key.hasPrefix("cam"): "Choose cameras"
+        default: "Robot settings"
+        }
     }
 
     private func icon(_ s: PreflightCheck.State) -> String {

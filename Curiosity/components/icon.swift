@@ -36,6 +36,7 @@ enum IconName: String {
     case taskLearned = "checkmark.circle"
     case dataset = "film.stack"
     case model = "brain"
+    case hand = "hand.point.up.left"
 }
 
 /// `<Icon name: size:>`: nada de nombres de símbolos sueltos por la app.

@@ -1,0 +1,68 @@
+/* En el encabezado, junto al nombre del robot: texto chico y apagado, sin caja. */
+.hud {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-left: var(--s-2);
+  color: var(--faint);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.sep {
+  width: 1px;
+  height: 12px;
+  background: var(--line-strong);
+}
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.message {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  max-width: min(520px, 80%);
+  padding: var(--s-2) var(--s-4);
+  border-radius: var(--r-l);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-pop);
+  color: var(--ink);
+  line-height: 1.45;
+}
+.message > svg {
+  flex: none;
+  color: var(--muted);
+}
+.message[data-error="true"] > svg {
+  color: var(--red);
+}
+
+.notice {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-m);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  animation: noticeIn var(--normal) var(--ease);
+}
+@keyframes noticeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}

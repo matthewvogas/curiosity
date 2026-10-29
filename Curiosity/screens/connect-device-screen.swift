@@ -11,8 +11,8 @@ struct ConnectDeviceScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                Text("Connect SO-101").font(.title2.weight(.semibold))
-                Text("Plug both arms in over USB and turn on their power supplies. Then pick which is which.")
+                Text("Connect a robot").font(.title2.weight(.semibold))
+                Text("Plug in both arms and turn on their power.")
                     .font(.callout).foregroundStyle(Theme.muted)
             }
 
@@ -35,7 +35,7 @@ struct ConnectDeviceScreen: View {
                 .formStyle(.grouped)
                 .scrollDisabled(true)
                 .frame(height: 120)
-                Text("Which is which? Unplug one arm: the port that disappears belongs to it.")
+                Text("Unplug one arm to see which port is which.")
                     .font(.caption).foregroundStyle(Theme.muted)
             }
 

@@ -1,0 +1,87 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-4);
+  font-size: var(--text-m);
+}
+.heading {
+  font-weight: 600;
+}
+.studying {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--muted);
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border-radius: var(--r-l);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.card[data-active="true"] {
+  border-color: var(--line-strong);
+  background: var(--raised);
+}
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  width: 100%;
+}
+.cardTitle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.title {
+  font-weight: 500;
+}
+.source {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.summary {
+  margin: 0;
+  font-size: var(--text-s);
+  color: var(--muted);
+  line-height: 1.45;
+}
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.linesTitle {
+  font-size: var(--text-s);
+  font-weight: 600;
+}
+.line {
+  font-size: var(--text-s);
+  color: var(--muted);
+  line-height: 1.45;
+}
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--text-s);
+  color: var(--muted);
+}
+.link:hover {
+  color: var(--ink);
+}
+.link[data-destructive] {
+  color: var(--red);
+}

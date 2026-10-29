@@ -7,7 +7,7 @@ enum AgentTools {
 
     static let definitions: [[String: Any]] = [
         tool("get_state",
-             "Reads the current state: each joint (position, target, limits, force) and the objects in the scene. Use it before planning a move.",
+             "Reads what the robot feels: each joint (position, target, limits, force). It does NOT say where objects are: for that, look through a camera.",
              properties: [:], required: []),
         tool("move_joints",
              "Sends targets to the joints and runs the simulation for a few seconds so the robot moves. Motors have limited force: if something blocks it, it won't reach the target. Returns the final state.",
@@ -28,10 +28,32 @@ enum AgentTools {
                 "seconds": ["type": "number", "description": "How long to run the simulation afterwards, in seconds (0.2 to 5). Default 1.5."],
              ], required: ["targets", "seconds"]),
         tool("look",
-             "Takes a picture of the scene to see where the robot and objects are. With no camera, it uses the main view; with the name of a camera mounted on the robot, the view from there.",
+             "Takes a picture through one of the robot's cameras. It comes with a pixel grid (labels every 64 px) and its size, so you can point at things for pick and place.",
              properties: [
-                "camera": ["type": "string", "description": "Name of a robot camera, or empty for the main view."],
+                "camera": ["type": "string", "description": "Camera name (for example the fixed one over the table)."],
              ], required: ["camera"]),
+        tool("pick",
+             "Picks up an object on its own, in real time. You mark in a camera picture where each finger goes: two points on opposite sides of the object, across its narrow side, on its top edge. The arm works out the whole move (it turns the gripper to match, opens just enough, goes down, closes and lifts). Returns whether the gripper is holding something (felt by the gripper) and a new picture.",
+             properties: [
+                "camera": ["type": "string", "description": "The camera of the picture you're pointing in."],
+                "finger_a_x": ["type": "number", "description": "Pixel x where one finger should touch the object (on one side of it)."],
+                "finger_a_y": ["type": "number", "description": "Pixel y of that point."],
+                "finger_b_x": ["type": "number", "description": "Pixel x where the other finger should touch (the opposite side, across the object's narrow side)."],
+                "finger_b_y": ["type": "number", "description": "Pixel y of that point."],
+                "height_cm": ["type": "number", "description": "Your estimate of the object's height, in cm (e.g. 2.5 for a small cube)."],
+             ], required: ["camera", "finger_a_x", "finger_a_y", "finger_b_x", "finger_b_y", "height_cm"]),
+        tool("place",
+             "Puts down what the gripper is holding, on its own: you point at the spot in a camera picture; the arm goes there, lowers it, opens and goes back up. Returns a new picture.",
+             properties: [
+                "camera": ["type": "string", "description": "The camera of the picture you're pointing in."],
+                "x": ["type": "number", "description": "Pixel x of where it should go."],
+                "y": ["type": "number", "description": "Pixel y of where it should go."],
+                "height_cm": ["type": "number", "description": "Height of the object being held, in cm."],
+                "surface_cm": ["type": "number", "description": "Height of the surface it goes on: 0 for the table, or the height of the object it goes on top of."],
+             ], required: ["camera", "x", "y", "height_cm", "surface_cm"]),
+        tool("gripper",
+             "Opens or closes the gripper and says whether it's holding something.",
+             properties: ["open": ["type": "boolean"]], required: ["open"]),
         tool("add_object",
              "Puts an object in the scene (it falls with gravity). Position in centimeters in the robot base frame (z up).",
              properties: [
@@ -42,6 +64,11 @@ enum AgentTools {
                 "position_cm": ["type": "array", "items": ["type": "number"], "description": "[x, y, z]"],
                 "color": ["type": "string", "description": "Hex color, for example #e4572e."],
              ], required: ["shape", "size_cm", "mass_g", "position_cm", "color"]),
+        tool("create_object",
+             "Creates a real-world object from a description (a wheel, a desk, a kitchen knife, a mug…) with its real size and weight, built from simple parts, and drops it on a free spot of the table. Use it instead of add_object for anything that isn't a plain box, ball or cylinder.",
+             properties: [
+                "description": ["type": "string", "description": "What the object is, with any detail that matters (size, material, color)."],
+             ], required: ["description"]),
         tool("remove_object", "Removes an object from the scene by its id.",
              properties: ["id": ["type": "integer"]], required: ["id"]),
         tool("reset", "Returns the robot to its starting pose, at rest. Doesn't move the objects.",
@@ -80,11 +107,19 @@ enum AgentTools {
         Robot: \(robotName) (model "\(model.name)"), \(model.links.count) parts, \(model.floating ? "free base (it can fall over)" : "fixed base").
         Motorized joints (the only ones you can command):
         \(joints)\(passive(model))
-        Mounted cameras: \(cameras).
+        Cameras: \(cameras).
+
+        This works like a real robot: you don't know where objects are except by looking through a camera. \
+        You're the planner and the eyes; the arm has its own controller that does the movement in real time.
 
         How to work:
-        - Before moving, look (look) and read the state (get_state) if you don't know where everything is.
-        - Move in short steps and check the result; correct it if it didn't get there.
+        - Look through the fixed camera over the table (look) to find things. Point in pixels, using the grid.
+        - To move objects use pick and place: you say what (pixels) and the arm works out how. For pick, mark \
+        where each finger goes (opposite sides across the object's narrow side), so the gripper turns to match. Each one \
+        returns a new picture: check it, and if it failed (missed, nothing in the gripper), point again more \
+        carefully and retry.
+        - Use move_joints only for things pick/place can't do (gestures, small adjustments).
+        - To add things to the scene, use create_object with a plain description; it builds them at real scale.
         - The frame is the robot base frame: z up, in centimeters. Joints are commanded in degrees \
         (or centimeters if they slide) and never outside their limits.
         - This is a simulation: there's no physical risk, but explain in one sentence what you're going to do.
@@ -102,7 +137,7 @@ enum AgentTools {
     // MARK: - Estado para la IA
 
     /// Estado legible por la IA, en grados y centímetros.
-    static func describe(state: SimulationState, model: RobotModel, objects: [SceneObject]) -> [String: Any] {
+    static func describe(state: SimulationState, model: RobotModel) -> [String: Any] {
         let info = Dictionary(uniqueKeysWithValues: model.joints.map { ($0.name, $0) })
         let joints = state.joints.map { s -> [String: Any] in
             let type = info[s.name]?.type ?? "revolute"
@@ -118,11 +153,8 @@ enum AgentTools {
             }
             return out
         }
-        let objs = objects.map { o -> [String: Any] in
-            ["id": o.id, "shape": o.shape, "color": o.color,
-             "position_cm": Units.centimeters(state.objectPositions[o.id] ?? o.pos)]
-        }
-        return ["time_s": round1(state.time), "joints": joints, "objects": objs, "contacts": state.contacts]
+        // Como un robot real: solo lo que siente (sus articulaciones), no dónde están los objetos.
+        return ["time_s": round1(state.time), "joints": joints]
     }
 
     /// Una frase corta para mostrar en el chat lo que hace cada herramienta.
@@ -137,10 +169,20 @@ enum AgentTools {
             let cam = input["camera"] as? String ?? ""
             return cam.isEmpty ? "Looking at the scene" : "Looking from \"\(cam)\""
         case "add_object": return "Adding an object (\(input["shape"] as? String ?? ""))"
+        case "create_object": return "Creating \(input["description"] as? String ?? "an object")"
         case "remove_object": return "Removing object \(input["id"] ?? "")"
         case "reset": return "Returning to the starting pose"
+        case "pick": return "Picking up what's between \(pixel(input, "finger_a")) and \(pixel(input, "finger_b"))"
+        case "place": return "Putting it down at (\(Int((input["x"] as? NSNumber)?.doubleValue ?? 0)), \(Int((input["y"] as? NSNumber)?.doubleValue ?? 0)))"
+        case "gripper": return (input["open"] as? Bool ?? true) ? "Opening the gripper" : "Closing the gripper"
         default: return name
         }
+    }
+
+    /// «(x, y)» de un punto de la entrada de una herramienta (p. ej. finger_a → finger_a_x, finger_a_y).
+    static func pixel(_ input: [String: Any], _ key: String) -> String {
+        let v = { (k: String) in Int((input[k] as? NSNumber)?.doubleValue ?? 0) }
+        return "(\(v(key + "_x")), \(v(key + "_y")))"
     }
 
     static func json(_ value: Any) -> String {

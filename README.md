@@ -1,86 +1,98 @@
 # Curiosity
 
-Un simulador de robots con IA para macOS. Cargas cualquier robot (URDF o MJCF), conectas un modelo de IA y le
-pides tareas en tus palabras: la IA mira la escena, planea y mueve el robot en una simulación con física.
+A desktop app for people who want to teach a robot something without living in a terminal.
 
-- **Simulación con MuJoCo** (el binding oficial de Google DeepMind, `@mujoco/mujoco` 3.15, en WebAssembly):
-  un MJCF se carga tal cual (actuadores, tendones, igualdades, contactos); un URDF se convierte a MJCF con
-  sus masas, inercias, límites, motores de posición (kp, kv, fuerza máxima), <mimic> como igualdades y las
-  mallas cóncavas partidas en piezas convexas. Contactos, sensores (posición, velocidad, fuerza, contactos),
-  cámaras montadas, objetos libres, pausa, paso a paso y velocidad. three.js dibuja.
-- **IA**: Claude con herramientas (`get_state`, `move_joints`, `look`, `add_object`, `remove_object`,
-  `reset`). La API key se guarda en el Llavero. Las conversaciones se guardan por robot (Historial, en el chat).
-- **Robots reales** (por ahora el SO-101), con tu instalación de LeRobot (la app la busca sola; si no, se
-  indica en Ajustes). Cada robot conectado es como un proyecto:
-  - **Enseñar**: tareas en tres pasos (grabar demostraciones con el leader, entrenar ACT / Diffusion /
-    SmolVLA, probar el modelo), con revisión previa de cada pieza antes de mover nada.
-  - **En vivo**: las cámaras y un gemelo 3D que copia la pose del robot; chat con la IA (cada movimiento se
-    aprueba) y control manual; «Saber»: la IA estudia demostraciones (de esta Mac o de Hugging Face) y las
-    reproduce y adapta en el robot sin entrenar.
-  Lo hace un puente interno (`resources/bridge/curiosity_bridge.py`) que corre con el Python de LeRobot y
-  habla con la app por líneas JSON. Los entrenamientos corren aparte con `lerobot-train` y siguen aunque se
-  cierre la app. Datos y modelos en Application Support/Curiosity. Calibrar se hace en la terminal.
-- **Robots**: el SO-101 viene incluido; cualquier URDF o MJCF se importa con sus mallas STL, OBJ o DAE; y la
-  **biblioteca** trae 67 robots de MuJoCo Menagerie (brazos, pinzas, manos, cuadrúpedos, humanoides, móviles,
-  drones) que se descargan con un clic en una versión fija del repositorio y quedan en la Mac.
-- **Pinzas que agarran**: articulaciones acopladas (`<mimic>` en URDF; `<equality joint>` y tendones fijos en
-  MJCF) y descomposición convexa de las mallas cóncavas (`decompose.js`).
+I got an SO-101 arm and spent four days on ports, motor IDs, calibration, cameras and training commands before I could even test a task. Curiosity is what I wished I had on day one. You open it and there are two buttons: open a simulator, or connect your robot.
 
-## Correr
+There's a longer story on my blog: [Robots Don't Have a Cursor Yet](https://matthewvogas.com/blog/r-ui).
 
-    brew install xcodegen   # una vez
-    xcodegen && open Curiosity.xcodeproj   # ⌘R
+## What it does
 
-## Estructura
+**Simulator.** Load a robot and move it in a physics simulation. The SO-101 comes included. You can import any URDF or MJCF, or download one of 67 robots from MuJoCo Menagerie with one click: arms, grippers, hands, quadrupeds, humanoids. You can also talk to Claude and ask it to move the robot. It sees the scene and uses tools to do it.
 
-```
-Curiosity/
-  app/          entrada de la app (escenas, ventana)
-  screens/      juntan stores y componentes; lo único que lee los stores
-  components/   solo dibujan; todo les llega por props (incluido <Icon name: size:>)
-  stores/       use-*.swift: orquestan queries y guardan carga, error y datos (los «hooks»)
-  queries/      hablan con el disco, el Llavero, la API de Claude y el motor 3D; sin estado
-  utils/        lógica pura: unidades, herramientas de la IA, tema
-  types/        tipos de datos
-  resources/
-    studio/     motor de simulación, sin internet:
-                  engine.js      escena, física (MuJoCo) y API para la app
-                  mjcf-build.js  URDF → MJCF y la escena (piso y objetos)
-                  model-urdf.js  URDF → modelo interno
-                  model-mjcf.js  MJCF → modelo interno
-                  decompose.js   descomposición convexa de mallas
-                  lib/           three.js y MuJoCo (WebAssembly)
-    library/    catálogo de MuJoCo Menagerie (menagerie.json)
-    robots/     robots incluidos: <id>/<id>.urdf + <id>.studio.json + mallas
+**Real robot.** Plug in an SO-101. Curiosity checks that the six motors answer, that the arm is calibrated and that the cameras give an image. Then you see it live: the cameras, a 3D copy that follows the real arm, and the same chat. The arm only moves with the controls, or when you approve what the AI proposes.
+
+**Teach.** Describe a task in one sentence. Record a few demonstrations with the leader arm, train (ACT, Diffusion or SmolVLA), and test it on the robot. Or skip recording and train on demonstrations other people uploaded to Hugging Face for the same robot.
+
+Nothing in here is new science. It runs on the same open source tools you'd use from the terminal: MuJoCo for physics and LeRobot for recording and training.
+
+## Two versions
+
+There are two apps in this repo. They do the same thing and read the same files, so you can switch between them.
+
+| | Folder | Built with | Runs on |
+|---|---|---|---|
+| Mac | `Curiosity/` | SwiftUI | macOS 26+ |
+| Desktop | `desktop/` | Tauri 2, React, TypeScript | macOS, Windows, Linux |
+
+The simulator engine, the included robots, the robot library and the LeRobot bridge live in `Curiosity/resources/` and both apps use them as they are.
+
+### Mac
+
+```sh
+brew install xcodegen
+xcodegen
+open Curiosity.xcodeproj
 ```
 
-Reglas:
+Then ⌘R in Xcode.
 
-1. **Components** no llaman stores ni queries, ni contienen reglas de negocio: reciben datos y callbacks.
-2. **Stores** no dibujan ni contienen reglas de negocio; pueden componer otros stores.
-3. **Queries**: una por fuente de datos; devuelven lo crudo, sin estado.
-4. **Utils**: validaciones, conversiones y cálculos; nada de lógica compleja en componentes.
-5. **Nombres**: archivos y carpetas en kebab-case (`use-chat.swift`, `chat-view.swift`). Dentro de Swift,
-   el estilo de Swift (`UseChat`, `sendMessage`), para que el compilador y Xcode sigan siendo idiomáticos.
+### Desktop
 
-## Perfil de un robot (`<nombre>.studio.json`, opcional, junto al URDF)
-
-```json
-{
-  "name": "SO-101",
-  "description": "…",
-  "home": { "shoulder_lift": -1.74 },
-  "actuators": { "shoulder_pan": { "kp": 30, "kd": 1.5, "fmax": 3 } },
-  "cameras": [{ "name": "Muñeca", "link": "gripper_link", "pos": [0, 0, 0], "quat": [0, 0, 0, 1], "fovy": 60 }],
-  "scene": { "objects": [{ "shape": "box", "size": [0.03, 0.03, 0.03], "mass": 0.02, "color": "#e4572e", "pos": [0.2, 0, 0.02] }] }
-}
+```sh
+cd desktop
+npm install
+npx tauri dev      # development
+npx tauri build    # installer (.dmg, .msi, .exe)
 ```
 
-Unidades SI (metros, radianes, kg). Las cámaras miran hacia −z, como en MuJoCo.
+You'll need Node 22 and Rust. There's a GitHub Action in `.github/workflows/desktop.yml` that builds the Windows and macOS installers, so you don't need a Windows machine.
 
-## Pendiente
+### What you need for the rest
 
-Del MJCF: `<equality weld/connect>` (mecanismos de cuatro barras, como la Robotiq 2F-85), tendones espaciales,
-músculos, mallas definidas por vértices. Además: robots físicos (LeRobot), otros proveedores de IA y modelos
-de robots (VLA), entrenamiento, simulación más rápida que el tiempo real y en lotes, sensores de fuerza reales
-del actuador, aleatorización de dominio, grabar datasets.
+- An [Anthropic API key](https://console.anthropic.com) for the chat. It's stored in the system keychain.
+- For a real robot: an SO-101 and a working [LeRobot](https://github.com/huggingface/lerobot) install. Curiosity looks for it on its own; if it can't find it, you can point to it in Settings. Calibration still happens in the terminal for now.
+
+## How the code is organized
+
+Both apps follow the same layers, and every Swift file has a TypeScript twin with the same name.
+
+```
+app/          entry point
+screens/      connect stores to components; the only place that reads stores
+components/   only draw; everything comes in as props
+stores/       use-*: load data, keep loading/error state
+queries/      talk to the disk, the keychain, the Claude API, the bridge and the 3D engine; no state
+utils/        pure logic: units, AI tools, naming
+types/        data types
+```
+
+The robot bridge (`Curiosity/resources/bridge/curiosity_bridge.py`) runs with LeRobot's Python and talks to the app over JSON lines. Training runs separately with `lerobot-train`, so it keeps going if you close the app.
+
+`desktop/README.md` has more detail on the desktop version, written in Spanish.
+
+## What's missing
+
+- Four-bar mechanisms in MJCF (`<equality weld/connect>`), so grippers like the Robotiq 2F-85 don't close properly yet
+- Spatial tendons, muscles
+- Robots other than the SO-101 on the real side
+- Calibration inside the app
+- Faster-than-real-time and batched simulation
+
+It's a start. The robot still can't finish my Jenga row.
+
+## Credits
+
+Made by Matthew Vogas, with [Cursor](https://cursor.com) and [Claude](https://claude.ai) as co-creators. A lot of this code was written in conversation with them.
+
+Built on:
+
+- [MuJoCo](https://github.com/google-deepmind/mujoco) 3.15 by Google DeepMind (Apache 2.0), bundled as WebAssembly
+- [three.js](https://github.com/mrdoob/three.js) (MIT)
+- [SO-101](https://github.com/TheRobotStudio/SO-ARM100) model by TheRobotStudio and Hugging Face (Apache 2.0)
+- [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie), downloaded on demand; each robot keeps its own license
+- [LeRobot](https://github.com/huggingface/lerobot) by Hugging Face (Apache 2.0), installed separately
+
+## License
+
+MIT. See [LICENSE](LICENSE). The bundled third-party files keep their own licenses.

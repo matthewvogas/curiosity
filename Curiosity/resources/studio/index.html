@@ -10,6 +10,11 @@
   #pip { position: absolute; right: 16px; bottom: 16px; width: 240px; border-radius: 14px; overflow: hidden;
     box-shadow: 0 8px 30px rgba(0,0,0,.25); background: #222; }
   #pipCanvas { display: block; width: 100%; height: auto; }
+  /* Lo que mide el objeto bajo el cursor o agarrado. */
+  #objLabel { position: absolute; transform: translate(-50%, calc(-100% - 10px)); pointer-events: none; white-space: nowrap;
+    padding: 4px 8px; border-radius: 7px; background: rgba(20, 20, 22, 0.88); color: #f2f2f3;
+    font: 500 11px -apple-system, "Segoe UI", system-ui, sans-serif; box-shadow: 0 0 0 1px rgba(255,255,255,.12), 0 6px 20px rgba(0,0,0,.4); }
+  #objLabel span { color: #a8a8ad; font-weight: 400; }
   #pipLabel { position: absolute; left: 10px; top: 8px; font: 600 11px -apple-system, sans-serif; color: #fff;
     text-shadow: 0 1px 3px rgba(0,0,0,.6); }
 </style>
@@ -19,7 +24,9 @@
 </head>
 <body>
   <canvas id="view" tabindex="0"></canvas>
+  <div id="objLabel" hidden></div>
   <div id="pip" hidden><canvas id="pipCanvas"></canvas><span id="pipLabel"></span></div>
   <script type="module" src="./engine.js"></script>
+  <script type="module" src="./rpc.js"></script>
 </body>
 </html>

@@ -14,7 +14,7 @@ struct LibraryScreen: View {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Robot library").font(.title2.weight(.semibold))
-                        Text("\(library.catalog?.robots.count ?? 0) robots from MuJoCo Menagerie. Downloaded once and kept on your Mac.")
+                        Text("\(library.catalog?.robots.count ?? 0) robots from MuJoCo Menagerie")
                             .font(.callout).foregroundStyle(Theme.muted)
                     }
                     Spacer()

@@ -73,6 +73,9 @@ final class SimulationQueries: NSObject, WKScriptMessageHandler {
     func setSpeed(_ x: Double) { send("studio.setSpeed", x) }
     func view(_ name: String) { send("studio.view", name) }
     func showCamera(_ name: String?) { send("studio.showCamera", name ?? NSNull()) }
+    /// Una cámara en una pieza: {name, link, pos, quat [x,y,z,w], fovy, width, height} (convención de MuJoCo).
+    func addCamera(_ spec: [String: Any]) { send("studio.addCamera", spec) }
+    func removeCamera(_ name: String) { send("studio.removeCamera", name) }
     func removeObject(_ id: Int) { send("studio.removeObject", id) }
 
     func addObject(_ spec: [String: Any]) async throws -> Int {
@@ -80,15 +83,71 @@ final class SimulationQueries: NSObject, WKScriptMessageHandler {
         return (id as? NSNumber)?.intValue ?? 0
     }
 
+    /// Cambia un objeto ya puesto: {pos (m), yaw o euler (grados), mass, color, name, fixed}. Moverlo o girarlo
+    /// lo deja quieto en el lugar nuevo. Devuelve si el objeto existía.
+    func updateObject(_ id: Int, _ changes: [String: Any]) async throws -> Bool {
+        try await evaluate("return studio.updateObject(id, changes)", ["id": id, "changes": changes]) as? Bool ?? false
+    }
+
+    /// Dónde está (m, marco de la base) y cómo está girado (grados alrededor de z) cada objeto ahora.
+    func objectPoses() async throws -> [Int: (pos: [Double], yaw: Double)] {
+        let list = try await evaluate("return studio.objectPoses()", [:]) as? [[String: Any]] ?? []
+        var out: [Int: (pos: [Double], yaw: Double)] = [:]
+        for p in list {
+            guard let id = (p["id"] as? NSNumber)?.intValue else { continue }
+            out[id] = ((p["pos"] as? [NSNumber])?.map(\.doubleValue) ?? [0, 0, 0], (p["yaw"] as? NSNumber)?.doubleValue ?? 0)
+        }
+        return out
+    }
+
     /// Imagen de la vista principal o de una cámara montada (JPEG para la IA, PNG para capturas).
-    func capture(camera: String?, width: Int = 768, png: Bool = false) async throws -> Data {
-        let value = try await evaluate("return studio.capture(camera, width, format)",
-                                       ["camera": camera ?? NSNull(), "width": width, "format": png ? "png" : "jpeg"])
+    /// Con `grid`, la imagen lleva una cuadrícula con sus coordenadas en píxeles (para señalar).
+    func capture(camera: String?, width: Int = 768, png: Bool = false, grid: Bool = false) async throws -> Data {
+        let value = try await evaluate("return studio.capture(camera, width, format, grid)",
+                                       ["camera": camera ?? NSNull(), "width": width, "format": png ? "png" : "jpeg", "grid": grid])
         guard let url = value as? String, let comma = url.firstIndex(of: ","),
               let data = Data(base64Encoded: String(url[url.index(after: comma)...])) else {
             throw NSError(domain: "Curiosity", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't capture the image."])
         }
         return data
+    }
+
+    /// Una habilidad que se mueve sola (agarrar, dejar…) y cómo salió, cuando termina.
+    func skill(_ spec: [String: Any]) async throws -> [String: Any] {
+        let value = try await evaluate("return await studio.skill(spec)", ["spec": spec])
+        return value as? [String: Any] ?? [:]
+    }
+    func cancelSkill() { send("studio.cancelSkill") }
+    /// Planifica una habilidad sin mover nada: la trayectoria (filas [t, radianes de `names`…]) y cómo salió.
+    func planSkill(_ spec: [String: Any], names: [String], speed: Double) async throws -> [String: Any] {
+        let value = try await evaluate("return studio.planSkill(spec, { names, speed })", ["spec": spec, "names": names, "speed": speed])
+        return value as? [String: Any] ?? [:]
+    }
+    /// El centro del agarre ahora (m, marco de la base).
+    func tip() async throws -> [Double]? {
+        (try await evaluate("return studio.tip()", [:]) as? [NSNumber])?.map(\.doubleValue)
+    }
+    /// Puntos alcanzables repartidos en el espacio de trabajo del brazo (m, marco de la base), a su escala.
+    func workspacePoints(_ count: Int) async throws -> [[Double]] {
+        let value = try await evaluate("return studio.workspace(count)?.points ?? []", ["count": count])
+        return (value as? [[NSNumber]])?.map { $0.map(\.doubleValue) } ?? []
+    }
+    /// Límites de las articulaciones (radianes), p. ej. los de la calibración del robot real.
+    func setLimits(_ limits: [String: [Double]]) { send("studio.setLimits", limits) }
+    /// Tamaño en píxeles de la imagen de una cámara a `width` de ancho.
+    func cameraSize(_ camera: String, width: Int = 768) async throws -> (width: Int, height: Int) {
+        let list = try await evaluate("return studio.cameraInfo(width)", ["width": width]) as? [[String: Any]] ?? []
+        let c = list.first { $0["name"] as? String == camera }
+        return (width, (c?["height"] as? NSNumber)?.intValue ?? width * 3 / 4)
+    }
+
+    /// Cómo es el brazo según el ejecutor (articulaciones, pinza, alcance…), o nil si no reconoce uno.
+    func effector() async throws -> [String: Any]? {
+        try await evaluate("return studio.effector()", [:]) as? [String: Any]
+    }
+    /// Cada cámara con la pieza donde va montada (`link`) y si es fija.
+    func cameraInfo() async throws -> [[String: Any]] {
+        try await evaluate("return studio.cameraInfo(768)", [:]) as? [[String: Any]] ?? []
     }
 
     // MARK: - Mensajes del motor

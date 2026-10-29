@@ -18,13 +18,13 @@ struct SimRecordSheet: View {
                 Stepper("Up to \(Int(seconds)) s each", value: $seconds, in: 5...300, step: 5)
                 if leaders.count > 1 {
                     Picker("Leader", selection: $leaderID) {
-                        ForEach(leaders) { Text($0.name.isEmpty ? ($0.guess ?? "SO-101") : $0.name).tag(String?.some($0.id)) }
+                        ForEach(leaders) { Text($0.name.isEmpty ? ($0.guess ?? "Robot") : $0.name).tag(String?.some($0.id)) }
                     }
                 }
             } header: {
                 Text("Record in the simulation")
             } footer: {
-                Text("You move your leader and the simulated robot copies it; its camera and movements are recorded as a LeRobot dataset (to train or for Knowledge). The real arm isn't connected. Keys: → done, ← redo, Esc save.")
+                Text("→ done · ← redo · Esc save")
                     .foregroundStyle(Theme.muted)
             }
         }

@@ -44,7 +44,7 @@ struct SettingsScreen: View {
             } header: {
                 Text("Claude")
             } footer: {
-                Text("The key is stored in your Mac's Keychain and only sent to api.anthropic.com. Get one at console.anthropic.com.")
+                Text("Stored in your Keychain.")
                     .foregroundStyle(Theme.muted)
             }
 
@@ -67,7 +67,7 @@ struct SettingsScreen: View {
             } header: {
                 Text("Connected robots")
             } footer: {
-                Text("To teleoperate, record and train, the app uses your LeRobot install. The Hugging Face token (huggingface.co/settings/tokens, with write access) lets you upload datasets and download private ones; it's stored in the Keychain.")
+                Text("Hugging Face token needs write access. Stored in your Keychain.")
                     .foregroundStyle(Theme.muted)
             }
         }

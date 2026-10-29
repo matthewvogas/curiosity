@@ -13,7 +13,7 @@ struct AddRobotScreen: View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 Text("Open simulator").font(.title2.weight(.semibold))
-                Text("Any URDF or MJCF robot: arms, grippers, hands, quadrupeds, humanoids.")
+                Text("URDF or MJCF")
                     .font(.callout).foregroundStyle(Theme.muted)
             }
 
@@ -26,11 +26,11 @@ struct AddRobotScreen: View {
                 }
                 Divider().padding(.vertical, Theme.Space.xs)
                 OptionCard(icon: .globe, title: "Robot library",
-                           detail: "\(library.catalog?.robots.count ?? 0) robots from MuJoCo Menagerie, one click away.") {
+                           detail: "\(library.catalog?.robots.count ?? 0) robots from MuJoCo Menagerie") {
                     browsing = true
                 }
                 OptionCard(icon: .file, title: "Import a file",
-                           detail: "A URDF (.urdf) or MJCF (.xml) file; STL, OBJ or DAE meshes are read from its folder.") {
+                           detail: ".urdf or .xml") {
                     importing = true
                 }
             }

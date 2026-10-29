@@ -51,10 +51,6 @@ struct SimulationPanel: View {
                         Button("Save current", action: onSaveKey).buttonStyle(.link).font(.callout)
                     }
                     .padding(.top, Theme.Space.xs)
-                    if keyframes.isEmpty {
-                        Text("Save the pose of the robot and objects to come back to it anytime.")
-                            .font(.caption).foregroundStyle(Theme.muted)
-                    }
                     ForEach(keyframes) { key in
                         HStack {
                             Button(key.name) { onLoadKey(key) }.buttonStyle(.link)

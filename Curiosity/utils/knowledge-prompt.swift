@@ -6,12 +6,13 @@ enum KnowledgePrompt {
     // MARK: - Estudio
 
     static let studySystem = """
-    You are the assistant in Curiosity. You're going to study demonstrations recorded with an SO-101 arm (or SO-100, \
-    which has the same joints) to write a knowledge package. Later, another session of yours \
+    You are the assistant in Curiosity. You're going to study demonstrations recorded with a robot (the dataset says \
+    which) to write a knowledge package. Later, another session of yours \
     will use it to do the task on a real robot, live, without training any network: it will read your guide, go to \
     the poses you save and replay the segments you choose, adapting them to what it sees.
 
-    Joints in degrees (0° is the center of the calibrated travel); gripper from 0 to 100. Times are \
+    Each joint's unit is given with the data: degrees (0° is the center of the calibrated travel) or the motor's \
+    0–100 / −100–100 scale. Times are \
     seconds from the start of each demonstration.
 
     Write the package with the write_package tool:
@@ -57,7 +58,7 @@ enum KnowledgePrompt {
         content.append(["type": "text", "text": """
         Dataset \(m.repoID): \(m.info["total_episodes"] ?? "?") demonstrations at \(m.info["fps"] ?? "?") fps, robot \
         \(m.info["robot_type"] ?? "?"), cameras \((m.info["cameras"] as? [String] ?? []).joined(separator: ", ")). \
-        Task: \(tasks). Units: \(m.info["units"] ?? "degrees").
+        Task: \(tasks). Trajectory columns: t (s), \(m.joints.map { j in "\(j) (\((m.info["joint_units"] as? [String: String])?[j] ?? "?"))" }.joined(separator: ", ")).
         """])
         for e in m.episodes {
             let rows = e.trajectory.enumerated().filter { $0.offset % 5 == 0 || $0.offset == e.trajectory.count - 1 }.map(\.element)
@@ -84,8 +85,9 @@ enum KnowledgePrompt {
         func number(_ key: String, _ item: [String: Any]) -> Double { (item[key] as? NSNumber)?.doubleValue ?? 0 }
         let poses = (input["poses"] as? [[String: Any]] ?? []).compactMap { p -> KnowledgePackage.Pose? in
             let e = Int(number("episode", p)), at = number("at_s", p)
-            guard let traj = byEpisode[e], let row = traj.min(by: { abs($0[0] - at) < abs($1[0] - at) }), row.count == 7 else { return nil }
-            return .init(name: strings("name", p), joints: Dictionary(uniqueKeysWithValues: zip(RealAgentTools.joints, row.dropFirst())),
+            guard let traj = byEpisode[e], let row = traj.min(by: { abs($0[0] - at) < abs($1[0] - at) }),
+                  row.count == m.joints.count + 1 else { return nil }
+            return .init(name: strings("name", p), joints: Dictionary(uniqueKeysWithValues: zip(m.joints, row.dropFirst())),
                          note: strings("note", p))
         }
         let segments = (input["segments"] as? [[String: Any]] ?? []).compactMap { s -> KnowledgePackage.Segment? in
@@ -97,7 +99,7 @@ enum KnowledgePrompt {
             source: m.repoID, title: strings("title", input), summary: strings("summary", input),
             stages: (input["stages"] as? [[String: Any]] ?? []).map { .init(name: strings("name", $0), goal: strings("goal", $0), check: strings("check", $0)) },
             poses: poses, segments: segments, tips: input["tips"] as? [String] ?? [],
-            trajectories: Dictionary(uniqueKeysWithValues: m.episodes.map { (String($0.index), $0.trajectory) }),
+            trajectories: Dictionary(uniqueKeysWithValues: m.episodes.map { (String($0.index), $0.trajectory) }), joints: m.joints,
             pictures: m.pictures.prefix(4).map { .init(label: "Demonstration \($0.episode), \($0.label)", jpeg: $0.jpeg) })
     }
 
@@ -107,7 +109,7 @@ enum KnowledgePrompt {
     static func liveSection(_ k: KnowledgePackage) -> String {
         let stages = k.stages.enumerated().map { "\($0.offset + 1). \($0.element.name): \($0.element.goal) — achieved if: \($0.element.check)" }
         let poses = k.poses.map { p in
-            "- \"\(p.name)\": " + RealAgentTools.joints.map { "\($0) \(RealAgentTools.format(p.joints[$0] ?? 0, $0))" }.joined(separator: ", ") + (p.note.isEmpty ? "" : " (\(p.note))")
+            "- \"\(p.name)\": " + k.jointOrder.filter { p.joints[$0] != nil }.map { "\($0) \(RealAgentTools.format(p.joints[$0] ?? 0, $0))" }.joined(separator: ", ") + (p.note.isEmpty ? "" : " (\(p.note))")
         }
         let segments = k.segments.map { "- \"\($0.name)\": demonstration \($0.episode), from \($0.from) to \($0.to) s\($0.note.isEmpty ? "" : " (\($0.note))")" }
         return """
@@ -133,7 +135,8 @@ enum KnowledgePrompt {
         """
     }
 
-    static let liveTools: [[String: Any]] = [
+    /// Se arma en cada uso: las articulaciones son las del robot conectado.
+    static var liveTools: [[String: Any]] { [
         [
             "name": "go_to_pose", "strict": true,
             "description": "Takes the robot to a saved pose from the knowledge package, with optional adjustments in degrees. Requires approval.",
@@ -146,12 +149,12 @@ enum KnowledgePrompt {
             "input_schema": ["type": "object", "additionalProperties": false, "required": ["name", "speed", "offsets"],
                              "properties": ["name": ["type": "string"], "speed": ["type": "number"], "offsets": offsets]] as [String: Any],
         ],
-    ]
+    ] }
 
-    private static let offsets: [String: Any] = [
+    private static var offsets: [String: Any] { [
         "type": "array",
-        "description": "Adjustments to add to each point, in degrees (gripper in 0-100). Empty if not needed.",
+        "description": "Adjustments to add to each point, in each joint's unit. Empty if not needed.",
         "items": ["type": "object", "additionalProperties": false, "required": ["joint", "delta"],
                   "properties": ["joint": ["type": "string", "enum": RealAgentTools.joints], "delta": ["type": "number"]]],
-    ]
+    ] }
 }

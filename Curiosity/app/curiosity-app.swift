@@ -28,7 +28,7 @@ struct CuriosityApp: App {
 
     init() {
         let settings = UseSettings()
-        let simulation = UseSimulation()
+        let simulation = UseSimulation(settings: settings)
         _settings = State(initialValue: settings)
         let lerobot = UseLeRobot(settings: settings)
         _lerobot = State(initialValue: lerobot)

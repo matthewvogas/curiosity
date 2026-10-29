@@ -76,6 +76,17 @@ enum TrainQueries {
     }
 
     /// Avance según la barra y las líneas de pérdida de lerobot-train.
+    /// Los nombres de cámara con que se entrenó el modelo, en el orden de su config.json (p. ej. up, side).
+    /// Se leen del texto: el orden importa y JSONSerialization no lo conserva.
+    static func cameras(_ job: TrainJob) -> [String] {
+        guard let text = try? String(contentsOfFile: job.modelPath + "/config.json", encoding: .utf8) else { return [] }
+        var out: [String] = []
+        for m in text.matches(of: /"observation\.images\.([\w-]+)"/) where !out.contains(String(m.output.1)) {
+            out.append(String(m.output.1))
+        }
+        return out
+    }
+
     static func progress(_ job: TrainJob) -> TrainProgress {
         var out = TrainProgress()
         out.running = isAlive(job.pid)

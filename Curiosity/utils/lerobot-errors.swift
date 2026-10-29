@@ -4,8 +4,12 @@ import Foundation
 enum LeRobotErrors {
     static func friendly(_ raw: String) -> String {
         let t = raw.lowercased()
+        // Los avisos del puente que ya dicen qué hacer se muestran tal cual.
+        if raw.hasPrefix("This model") { return raw }
+        // Un problema leyendo la configuración no es la cámara: se muestra tal cual.
+        if t.contains("failed when parsing") || t.contains("didn't accept the settings") { return "LeRobot didn't accept the settings: \(raw)" }
         if t.contains("camera") || t.contains("opencv") {
-            return "The camera didn't respond. Check Curiosity's camera permission and make sure no other app is using it."
+            return "The camera didn't respond. Check Curiosity's camera permission and make sure no other app is using it. (\(raw))"
         }
         if t.contains("busy") || t.contains("resource temporarily") { return "The robot's port is being used by another app." }
         if t.contains("no such file") || t.contains("could not connect") || t.contains("missing motor") {

@@ -46,7 +46,7 @@ final class UseTraining {
         message = nil
         guard AppPaths.isValidName(name) else { message = "The name can only have letters, numbers, - and _."; return }
         guard !jobs.contains(where: { $0.name == name }) else { message = "There's already a training called “\(name)”."; return }
-        guard !TrainQueries.anyRunning() else { message = "A training is already running: two at once fight over the GPU."; return }
+        guard !TrainQueries.anyRunning() else { message = "A training is already running."; return }
         let output = AppPaths.training.appendingPathComponent(name).path
         let log = AppPaths.logs.appendingPathComponent("\(name).log")
         let args = TrainQueries.arguments(dataset: dataset, datasetRoot: datasetRoot, policy: policy, steps: steps,

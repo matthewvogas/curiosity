@@ -19,8 +19,6 @@ struct TaskEmptyState: View {
                     .foregroundStyle(Theme.muted)
                     .padding(.bottom, Theme.Space.xs)
                 Text("What do you want it to learn?").font(.title.weight(.semibold))
-                Text("Show it a few times with the leader, train it, and then it does it on its own.")
-                    .font(.body).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
             }
 
             HStack(spacing: Theme.Space.s) {
@@ -57,11 +55,6 @@ struct TaskEmptyState: View {
         }
         .padding(Theme.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .safeAreaInset(edge: .bottom) {
-            Label("Works best with short tasks that are always the same and in view of the camera.", systemImage: "lightbulb")
-                .font(.caption).foregroundStyle(Theme.faint)
-                .padding(.bottom, Theme.Space.xl)
-        }
         .overlay(alignment: .topTrailing) {
             if let onCancel {
                 Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction).padding(Theme.Space.l)
@@ -99,12 +92,12 @@ struct RecordingView: View {
             }
             HStack(spacing: Theme.Space.m) {
                 Button("Redo", action: onRedo).keyboardShortcut(.leftArrow, modifiers: [])
-                    .disabled(session.phase != "recording").help("Discards this demonstration and starts again (←)")
+                    .disabled(session.phase != "recording").help("Redo (←)")
                 Button(session.phase == "reset" ? "Ready, next" : "Done with this one", action: onNext)
                     .buttonStyle(.borderedProminent).keyboardShortcut(.rightArrow, modifiers: [])
                     .disabled(!(session.phase == "recording" || session.phase == "reset")).help("→")
                 Button("Stop and save", role: .destructive, action: onStop).keyboardShortcut(.escape, modifiers: [])
-                    .help("Saves the finished demonstrations; you can continue later (Esc)")
+                    .help("Save and stop (Esc)")
             }
             .controlSize(.large)
         }
@@ -124,32 +117,77 @@ struct RecordingView: View {
 
     private var hint: String {
         switch session.phase {
-        case "recording": "Do the task with the leader, from start to finish."
-        case "reset": "Not recording. Put the objects back as they were at the start, moving them around a little."
+        case "recording": "Recording"
+        case "reset": "Reset the scene"
         case "starting": "The follower will copy the leader."
         default: ""
         }
     }
 }
 
-/// El robot usa el modelo: la cámara y un solo botón para detenerlo.
+/// El robot usa el modelo: sus cámaras y el modelo 3D (como en vivo, cada uno se puede ocultar) y un solo
+/// botón para detenerlo.
 struct RunningView: View {
     let session: RobotSession
-    let frame: Data?
+    let frames: [String: Data]
+    let twin: SimulationQueries
     let onStop: () -> Void
+
+    /// Los paneles ocultos, por nombre («3D» es el modelo), separados por comas.
+    @AppStorage("running.hidden") private var hiddenList = ""
+    @State private var focused = 0
+
+    private var hidden: Set<String> { Set(hiddenList.split(separator: ",").map(String.init)) }
+    private var panels: [String] { (session.cameras.isEmpty ? Array(frames.keys).sorted() : session.cameras) + ["3D"] }
+    private var shown: [String] { panels.filter { !hidden.contains($0) } }
+
+    private func toggle(_ key: String) {
+        var h = hidden
+        if h.contains(key) { h.remove(key) } else { h.insert(key) }
+        hiddenList = h.sorted().joined(separator: ",")
+        focused = 0
+    }
 
     var body: some View {
         VStack(spacing: Theme.Space.l) {
-            LivePicture(frame: frame).frame(maxHeight: 420)
+            if shown.isEmpty {
+                Text("All panels hidden")
+                    .foregroundStyle(Theme.muted).frame(maxHeight: .infinity)
+            } else {
+                TileLayout(focused: min(focused, shown.count - 1)) {
+                    ForEach(Array(shown.enumerated()), id: \.element) { i, key in
+                        Tile(title: key == "3D" ? "3D model" : key, focused: i == min(focused, shown.count - 1), onTap: { focused = i }) {
+                            if key == "3D" {
+                                SimStage(engine: twin)
+                            } else if let frame = frames[key], let image = NSImage(data: frame) {
+                                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                            } else {
+                                ProgressView()
+                            }
+                        }
+                    }
+                }
+            }
             Text(session.phase == "running" ? "The robot is doing the task · \(Units.clock(session.elapsed)) of \(Units.clock(session.limit))"
                  : session.phase == "returning" ? "Returning to the home pose…" : "Loading the model and connecting…")
                 .font(.title3).monospacedDigit()
-            Button("Stop robot", role: .destructive, action: onStop)
-                .buttonStyle(.borderedProminent).tint(Theme.red).controlSize(.large)
-                .keyboardShortcut(.escape, modifiers: []).help("Esc")
+            HStack {
+                Menu {
+                    ForEach(panels, id: \.self) { key in
+                        Toggle(key == "3D" ? "3D model" : key, isOn: Binding(get: { !hidden.contains(key) }, set: { _ in toggle(key) }))
+                    }
+                } label: {
+                    Label("Show", systemImage: "rectangle.3.group")
+                }
+                .fixedSize()
+                .help("Show or hide panels")
+                Button("Stop robot", role: .destructive, action: onStop)
+                    .buttonStyle(.borderedProminent).tint(Theme.red).controlSize(.large)
+                    .keyboardShortcut(.escape, modifiers: []).help("Esc")
+            }
         }
-        .padding(Theme.Space.xxl)
-        .frame(maxWidth: 720)
+        .padding(Theme.Space.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -161,13 +199,12 @@ struct HubPickerView: View {
     let onSearch: () -> Void
     let onPick: (HubDataset) -> Void
     let onClose: () -> Void
-    var detail = "Demonstrations others recorded with an SO-101. Train with them instead of recording your own; they download automatically."
+    var detail = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             Text("Data from Hugging Face").font(.title2.weight(.semibold))
-            Text(detail)
-                .font(.callout).foregroundStyle(Theme.muted)
+            if !detail.isEmpty { Text(detail).font(.callout).foregroundStyle(Theme.muted) }
             HStack {
                 TextField("Search", text: $query).textFieldStyle(.roundedBorder).onSubmit(onSearch)
                 Button(searching ? "Searching…" : "Search", action: onSearch).disabled(searching)

@@ -35,7 +35,11 @@ private struct TabButton: View {
 
     var body: some View {
         Button(action: action) {
+            // Una sola línea siempre: con muchas pestañas el texto se achica un poco en vez de partirse.
             Text(title).font(.callout)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 4)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
             .foregroundStyle(selected ? Theme.ink : Theme.muted)

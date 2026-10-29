@@ -26,7 +26,9 @@ enum AnthropicQueries {
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2026-10-21", forHTTPHeaderField: "anthropic-version")
         // Si un filtro de seguridad declina, la API reintenta con otro modelo en la misma llamada.
-        request.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")
+        // Reintento con otro modelo si un filtro declina; y poder pedir que se descarten pensamientos viejos
+        // cuyo contexto cambió (thinking.block_binding) en lugar de fallar.
+        request.setValue("server-side-fallback-2026-07-01,thinking-binding-controls-2026-08-01", forHTTPHeaderField: "anthropic-beta")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)

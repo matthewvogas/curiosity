@@ -22,6 +22,10 @@ enum AppPaths {
     /// Registros de los entrenamientos.
     static var logs: URL { folder("logs") }
     static var knowledge: URL { folder("knowledge") }
+    /// La página de notas de cada tarea (un .rtf por tarea).
+    static var notes: URL { folder("notes") }
+    /// Las notas de cada robot para la IA (un .md por robot: ver RobotNotes).
+    static var robotNotes: URL { folder("robot-notes") }
     /// Donde LeRobot guarda los datasets descargados del Hub.
     static var hubCache: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cache/huggingface/lerobot", isDirectory: true)

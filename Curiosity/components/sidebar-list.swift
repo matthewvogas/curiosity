@@ -54,7 +54,7 @@ struct SidebarList: View {
                 .listRowBackground(Color.clear)
                 .selectionDisabled()
             if !isCollapsed("devices") { ForEach(devices) { device in
-                SidebarRow(icon: .link, title: device.name.isEmpty ? (device.guess ?? "SO-101") : device.name,
+                SidebarRow(icon: .link, title: device.name.isEmpty ? (device.guess ?? "Robot") : device.name,
                            subtitle: !connectedPorts.contains(device.id) ? "Unplugged"
                                      : device.leaderPort == nil ? "Plugged in" : "Plugged in · with leader",
                            selected: device.id == selectedDeviceID && selectedTaskID == nil,

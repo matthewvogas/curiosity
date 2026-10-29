@@ -18,8 +18,6 @@ struct KnowledgePanel: View {
             VStack(alignment: .leading, spacing: Theme.Space.l) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Knowledge").font(.headline)
-                    Text("The AI studies demonstrations and writes down how the task is done: stages, poses and segments it can replay on the robot. No training.")
-                        .font(.caption).foregroundStyle(Theme.muted)
                 }
 
                 if let studying {

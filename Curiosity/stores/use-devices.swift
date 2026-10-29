@@ -12,7 +12,9 @@ final class UseDevices {
     private(set) var devices: [Device] = DeviceQueries.known()
     /// Puertos USB enchufados ahora.
     private(set) var connectedPorts: [String] = []
-    var selectedID: String?
+    var selectedID: String? = UserDefaults.standard.string(forKey: "devices.selected") {
+        didSet { UserDefaults.standard.set(selectedID, forKey: "devices.selected") }
+    }
     private(set) var probe: Probe = .idle
 
     private var watcher: Task<Void, Never>?

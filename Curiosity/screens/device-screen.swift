@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Un robot real (SO-101). Lo principal: enseñarle una tarea en tres pasos (demostraciones, entrenar,
+/// Un robot real (cualquiera de LeRobot). Lo principal: enseñarle una tarea en tres pasos (demostraciones, entrenar,
 /// probar). Lo secundario va en la toolbar: moverlo con el leader y sus ajustes. Todo lo que mueve el
 /// robot pide confirmación; los valores por defecto se cambian en la misma página de la tarea.
 struct DeviceScreen: View {
@@ -16,15 +16,18 @@ struct DeviceScreen: View {
     enum Action { case teleop, record, run, live }
     enum Mode: String { case teach, live }
     @State private var mode: Mode = .teach
+    /// En una tarea: sus pasos o su página de notas.
+    @AppStorage("task.tab") private var taskTab = "steps"
     @State private var confirm: Action?
     @State private var showingSettings = false
     @State private var showingHub = false
+    @State private var runSetupJob: TrainJob?
+    @State private var previews: [Int: Data] = [:]
     @State private var snapshot: Data?
     @State private var deleting: DatasetInfo?
     // Revisión previa (grabar o probar): cada pieza, sin mover nada.
     @State private var preflightFor: Action?
     @State private var checks: [PreflightCheck] = []
-    @State private var checkPicture: Data?
     @State private var checking = false
 
     var body: some View {
@@ -38,15 +41,20 @@ struct DeviceScreen: View {
             .onChange(of: lerobot.session?.active) { _, active in if active == false { Task { await datasets.load() } } }
             .sheet(isPresented: $showingSettings) { settingsSheet }
             .sheet(isPresented: $showingHub) { hubSheet }
+            .sheet(item: $runSetupJob) { job in runSetupSheet(job) }
             .sheet(isPresented: Binding(get: { training.watched != nil }, set: { if !$0 { training.watch(nil) } })) {
                 liveTraining
             }
             .sheet(isPresented: Binding(get: { preflightFor != nil }, set: { if !$0 { preflightFor = nil } })) {
                 PreflightView(
-                    title: preflightFor == .record ? "Before recording" : preflightFor == .live ? "Before connecting" : "Before running",
-                    checks: checks, picture: checkPicture, checking: checking,
+                    title: preflightTitle, checks: checks,
+                    leader: preflightFor == .record || preflightFor == .teleop
+                        ? PreflightLeader(ports: devices.connectedPorts.filter { $0 != device.id }, calibrations: lerobot.leaders(device),
+                                          port: bindDevice(\.leaderPort), id: bindDevice(\.leaderID))
+                        : nil,
+                    checking: checking,
                     warning: preflightFor.map(message) ?? "",
-                    startTitle: preflightFor == .record ? "Start recording" : preflightFor == .live ? "Connect" : "Run on the robot",
+                    startTitle: preflightFor.map(confirmButtonTitle) ?? "Start",
                     onRetry: { if let a = preflightFor { check(a) } },
                     onStart: {
                         let action = preflightFor
@@ -54,7 +62,16 @@ struct DeviceScreen: View {
                         Task { await run(action) }
                     },
                     onCancel: { preflightFor = nil },
-                    onFix: { preflightFor = nil; showingSettings = true },
+                    onFix: { key in
+                        let action = preflightFor
+                        preflightFor = nil
+                        // Las cámaras de un modelo se eligen en «Cameras and arm…»; lo demás, en los ajustes.
+                        if action == .run, key == "cameras" || key == "camera" || key.hasPrefix("cam"), let job = runTarget {
+                            runSetupJob = job
+                        } else {
+                            showingSettings = true
+                        }
+                    },
                     onOpenPrivacy: { NSWorkspace.shared.open(PermissionQueries.cameraSettings) })
             }
             .confirmationDialog(confirmTitle, isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } })) {
@@ -70,8 +87,8 @@ struct DeviceScreen: View {
                 }
             } message: {
                 Text(deleting?.source == "hub"
-                     ? "This deletes the copy on this Mac. It stays on Hugging Face and can be downloaded again."
-                     : "This deletes its \(deleting?.episodes ?? 0) demonstrations from this Mac. This can’t be undone. Models already trained are kept.")
+                     ? "It stays on Hugging Face."
+                     : "\(deleting?.episodes ?? 0) demonstrations. This can’t be undone.")
             }
     }
 
@@ -84,9 +101,24 @@ struct DeviceScreen: View {
         } else if let s = lerobot.session, s.active, s.kind == "record" {
             RecordingView(session: s, frame: lerobot.frame, onNext: lerobot.next, onRedo: lerobot.redo, onStop: lerobot.stop)
         } else if let s = lerobot.session, s.active, s.kind == "rollout" {
-            RunningView(session: s, frame: lerobot.frame, onStop: lerobot.stop)
+            RunningView(session: s, frames: lerobot.frames, twin: live.twin, onStop: lerobot.stop)
         } else if let task = tasks.selected(for: device.id) {
-            taskPage(task)
+            VStack(spacing: 0) {
+                Picker("View", selection: $taskTab) {
+                    Text("Steps").tag("steps")
+                    Text("Notes").tag("notes")
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 200)
+                .padding(.vertical, Theme.Space.s)
+                if taskTab == "notes" {
+                    // El mismo ancho y márgenes que la página de pasos (TaskPage, Form agrupado).
+                    NotePage(url: NoteQueries.url(for: task.id))
+                        .frame(maxWidth: 640)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    taskPage(task)
+                }
+            }
         } else if tasks.tasks(for: device.id).isEmpty {
             TaskEmptyState { title in tasks.add(title: title, deviceID: device.id) }
         } else {
@@ -141,7 +173,8 @@ struct DeviceScreen: View {
             demos: s.demos, hubDataset: task.hubDataset ? task.dataset : nil,
             policies: PolicyOption.all.map { p in (p.id, p.needsSmolVLA && lerobot.env?.smolvla != true ? "\(p.name) (not installed)" : p.name) },
             progress: s.progress, hasModel: s.hasModel, eta: eta(task),
-            canRecord: device.canRecord, canRun: device.canRunPolicy, busy: lerobot.isBusy, notice: notice)
+            // El leader se elige en la revisión previa: para empezar basta con el follower y la cámara.
+            canRecord: device.canRunPolicy, canRun: device.canRunPolicy, busy: lerobot.isBusy, notice: notice)
         let actions = TaskPageActions(
             onRecord: { check(.record) },
             onHub: openHub,
@@ -151,6 +184,7 @@ struct DeviceScreen: View {
             onWatchTraining: s.job.map { job in { training.watch(job.name) } },
             onRun: { runJob = nil; check(.run) },
             onFixSetup: { showingSettings = true },
+            onRunSetup: { runSetupJob = s.job },
             onRemove: { tasks.remove(task.id) })
         return TaskPage(info: info, episodes: bind(task, \.episodes), episodeSeconds: bind(task, \.episodeSeconds),
                         policy: bind(task, \.policy), steps: bind(task, \.steps), runSeconds: bind(task, \.runSeconds),
@@ -175,24 +209,24 @@ struct DeviceScreen: View {
             }
             .pickerStyle(.segmented)
             .disabled(live.isLive || (lerobot.isBusy && !live.isLive))
-            .help("Teach it tasks, or control it now with chat and the controls")
+            .help("Teach or control live")
         }
         if live.isLive {
             ToolbarItem(placement: .primaryAction) {
                 Button { liveChat?.stop(); live.stop() } label: { Label("Release", systemImage: "stop.fill") }
                     .labelStyle(.titleAndIcon)
                     .disabled(live.isReturning)
-                    .help("Slowly returns to its starting pose and releases the motors")
+                    .help("Return to start and release")
             }
         }
-        if device.leaderPort != nil && !live.isLive && mode == .teach { ToolbarItem(placement: .primaryAction) {
+        if !live.isLive && mode == .teach { ToolbarItem(placement: .primaryAction) {
             if lerobot.session?.active == true && lerobot.session?.kind == "teleop" {
                 Button { lerobot.stop() } label: { Label("Stop moving", systemImage: "stop.fill") }
                     .help("Releases the follower’s motors")
             } else {
-                Button { confirm = .teleop } label: { Label("Move with the leader", systemImage: "hand.raised") }
-                    .disabled(!device.canTeleoperate || lerobot.isBusy)
-                    .help(device.canTeleoperate ? "This robot copies its leader. Nothing is recorded." : "Choose the leader’s calibration in Robot settings")
+                Button { check(.teleop) } label: { Label("Move with the leader", systemImage: "hand.raised") }
+                    .disabled(lerobot.isBusy)
+                    .help("Nothing is recorded")
             }
         } }
         ToolbarItem(placement: .primaryAction) {
@@ -207,11 +241,16 @@ struct DeviceScreen: View {
                 HardwareTestView(
                     port: device.id,
                     name: Binding(get: { device.name }, set: { v in devices.update(device.id) { $0.name = v } }),
-                    placeholder: device.guess ?? "SO-101", connected: devices.isConnected(device.id),
+                    placeholder: device.guess ?? "Robot", connected: devices.isConnected(device.id),
                     testing: devices.isProbing, progress: probeProgress, result: probeResult, resultIsError: probeError,
                     found: device.found, onTest: { Task { await devices.test(device.id) } })
                 RobotSetupView(
-                    followers: lerobot.calibrations.followers, leaders: lerobot.calibrations.leaders,
+                    robotKinds: lerobot.robotKinds.map(\.type), teleopKinds: lerobot.teleopKinds.map(\.type),
+                    models: (RobotQueries.bundled() + RobotQueries.imported()).map { ($0.id, $0.name) },
+                    robotType: Binding(get: { device.robotKind }, set: { v in devices.update(device.id) { $0.robotType = v } }),
+                    teleopType: Binding(get: { device.teleopKind }, set: { v in devices.update(device.id) { $0.teleopType = v } }),
+                    modelID: Binding(get: { device.model ?? "" }, set: { v in devices.update(device.id) { $0.modelID = v } }),
+                    followers: lerobot.followers(device), leaders: lerobot.leaders(device),
                     otherPorts: devices.connectedPorts.filter { $0 != device.id }, cameras: lerobot.cameras,
                     followerID: bindDevice(\.followerID), leaderPort: bindDevice(\.leaderPort), leaderID: bindDevice(\.leaderID),
                     cameraIndex: Binding(get: { lerobot.mainCamera(device) }, set: { i in
@@ -223,7 +262,8 @@ struct DeviceScreen: View {
                     }),
                     extraCameras: Binding(get: { device.extraNames }, set: { v in devices.update(device.id) { $0.extraCameraNames = v } }),
                     snapshot: snapshot,
-                    onSnapshot: { Task { if let i = lerobot.mainCamera(device) { snapshot = await lerobot.snapshot(i) } } })
+                    onSnapshot: { Task { if let i = lerobot.mainCamera(device) { snapshot = await lerobot.snapshot(i) } } },
+                    onRefreshCameras: { lerobot.refreshCameras() })
             }
             .formStyle(.grouped)
             HStack { Spacer(); Button("Done") { showingSettings = false }.keyboardShortcut(.defaultAction) }
@@ -231,6 +271,31 @@ struct DeviceScreen: View {
         }
         .frame(width: 560, height: 620)
         .task { lerobot.refreshCameras() }
+    }
+
+    /// «Cameras and arm…» del paso 3: cada cámara que el modelo espera ↔ una cámara conectada.
+    /// La primera es la principal; las demás son las extra, en orden.
+    private func runSetupSheet(_ job: TrainJob) -> some View {
+        let names = TrainQueries.cameras(job)
+        return RunSetupView(
+            modelCameras: names.isEmpty ? ["front"] : names, cameras: lerobot.cameras, followers: lerobot.followers(device),
+            followerID: bindDevice(\.followerID),
+            slots: Binding(get: { [lerobot.mainCamera(device)] + lerobot.extraCameras(device).map(\.index) }, set: { slots in
+                let picked = slots.map { i in i.flatMap { i in lerobot.cameras.first { $0.index == i }?.name } }
+                devices.update(device.id) { d in
+                    if let first = slots.first, let main = first {
+                        d.cameraIndex = main
+                        d.cameraName = picked[0]
+                    }
+                    let extras = picked.dropFirst().compactMap { $0 }.filter { $0 != d.cameraName }
+                    d.extraCameraNames = extras + d.extraNames.filter { !extras.contains($0) && $0 != d.cameraName && !lerobot.cameras.map(\.name).contains($0) }
+                }
+            }),
+            previews: previews,
+            onPreview: { i in Task { if let data = await lerobot.snapshot(i) { previews[i] = data } } },
+            onRefreshCameras: { lerobot.refreshCameras() },
+            onDone: { runSetupJob = nil })
+            .task { lerobot.refreshCameras() }
     }
 
     @ViewBuilder
@@ -251,13 +316,37 @@ struct DeviceScreen: View {
     private func check(_ action: Action) {
         preflightFor = action
         checks = []
-        checkPicture = nil
         checking = true
         Task {
-            let r = await lerobot.preflight(device, withLeader: action == .record, withExtras: action == .live)
-            checks = r.checks
-            checkPicture = r.picture
+            checks = await lerobot.preflight(
+                device, withLeader: action == .record || action == .teleop, withCamera: action != .teleop,
+                withExtras: action == .live || action == .run,
+                roles: action == .run ? runTarget.map(TrainQueries.cameras) ?? [] : [])
             checking = false
+        }
+    }
+
+    /// El modelo que se va a probar: el elegido en el resumen o el de la tarea abierta.
+    private var runTarget: TrainJob? {
+        if let name = runJob { return training.jobs.first { $0.name == name } }
+        return tasks.selected(for: device.id).flatMap(trainingJob)
+    }
+
+    private var preflightTitle: String {
+        switch preflightFor {
+        case .record: "Before recording"
+        case .live: "Before connecting"
+        case .teleop: "Before moving with the leader"
+        default: "Before running"
+        }
+    }
+
+    private func confirmButtonTitle(_ action: Action) -> String {
+        switch action {
+        case .record: "Start recording"
+        case .live: "Connect"
+        case .teleop: "Move"
+        case .run: "Run on the robot"
         }
     }
 
@@ -300,8 +389,9 @@ struct DeviceScreen: View {
     private func applyDefaults() {
         guard lerobot.status == .ready else { return }
         devices.update(device.id) { d in
-            if d.followerID == nil, lerobot.calibrations.followers.count == 1 { d.followerID = lerobot.calibrations.followers[0] }
-            if d.leaderID == nil, d.leaderPort != nil, lerobot.calibrations.leaders.count == 1 { d.leaderID = lerobot.calibrations.leaders[0] }
+            let followers = lerobot.followers(d), leaders = lerobot.leaders(d)
+            if d.followerID == nil, followers.count == 1 { d.followerID = followers[0] }
+            if d.leaderID == nil, d.leaderPort != nil, leaders.count == 1 { d.leaderID = leaders[0] }
             // La cámara se recuerda por nombre (los números cambian al enchufar otra).
             if d.cameraName == nil, let i = d.cameraIndex { d.cameraName = lerobot.cameras.first { $0.index == i }?.name }
             if d.cameraIndex == nil {
@@ -314,7 +404,7 @@ struct DeviceScreen: View {
 
     // MARK: - Estado
 
-    private var deviceName: String { device.name.isEmpty ? (device.guess ?? "SO-101") : device.name }
+    private var deviceName: String { device.name.isEmpty ? (device.guess ?? "Robot") : device.name }
 
     private var openTask: TeachTask? {
         guard lerobot.session?.active != true || lerobot.session?.kind == "teleop" else { return nil }
@@ -329,10 +419,16 @@ struct DeviceScreen: View {
         TaskStatus.of(task, datasets: datasets.local, jobs: training.jobs, progress: training.progress)
     }
 
-    private func eta(_ task: TeachTask) -> String {
-        // ACT en una Mac con chip M: ~0,6 s por paso (medido con el SO-101).
-        let hours = Double(task.steps) * (task.policy == "act" ? 0.6 : 1.5) / 3600
-        return hours < 1 ? "under 1 h" : "about \(Int(hours.rounded())) h"
+    /// Cuánto tardaría, medido en los entrenamientos de esta Mac con el mismo modelo (segundos por paso del
+    /// último que avanzó). Sin ninguno medido no se adivina: nil.
+    private func eta(_ task: TeachTask) -> String? {
+        let measured = training.jobs.reversed().lazy.compactMap { job -> Double? in
+            guard job.policy == task.policy, let p = training.progress[job.name], p.step > 0,
+                  let seconds = p.elapsed.flatMap(Units.seconds) else { return nil }
+            return seconds / Double(p.step)
+        }.first
+        guard let perStep = measured else { return nil }
+        return "About " + Units.duration(perStep * Double(task.steps))
     }
 
     private func policyName(_ id: String) -> String { PolicyOption.all.first { $0.id == id }?.name ?? id.uppercased() }
@@ -377,11 +473,11 @@ struct DeviceScreen: View {
     private func message(_ action: Action) -> String {
         switch action {
         case .live:
-            "The arm will hold its pose. It only moves with the controls or when you approve what the AI suggests."
+            "The arm holds its pose."
         case .teleop, .record:
-            "The follower will copy the leader as soon as it connects. Put the leader in a pose similar to the follower’s, with both power supplies on."
+            "The follower jumps to the leader’s pose. Keep them close."
         case .run:
-            "The robot will move on its own. Clear the table and stay near the power supply; Esc stops it."
+            "It moves on its own. Clear the table. Esc stops it."
         }
     }
 

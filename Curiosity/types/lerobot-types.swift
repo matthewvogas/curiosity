@@ -7,13 +7,20 @@ struct LeRobotEnv: Equatable {
     var smolvla: Bool
 }
 
-/// Calibraciones guardadas por LeRobot: tipo (so_follower, so_leader) → nombres (mi_follower…).
+/// Calibraciones guardadas por LeRobot: carpeta (so_follower, koch_leader…) → nombres (mi_follower…).
 struct Calibrations: Equatable {
     var robots: [String: [String]] = [:]
     var teleoperators: [String: [String]] = [:]
+}
 
-    var followers: [String] { robots["so_follower"] ?? robots.values.flatMap { $0 } }
-    var leaders: [String] { teleoperators["so_leader"] ?? teleoperators.values.flatMap { $0 } }
+/// Un tipo de robot o de teleoperador que trae LeRobot (--robot.type / --teleop.type).
+struct RobotKind: Identifiable, Equatable {
+    var type: String
+    /// Si se conecta por un puerto serie.
+    var port: Bool
+    /// La carpeta donde LeRobot guarda sus calibraciones (nil si no se pudo saber sin conectarlo).
+    var calibration: String?
+    var id: String { type }
 }
 
 struct CameraInfo: Identifiable, Equatable {
@@ -56,6 +63,9 @@ struct RobotSession: Equatable {
     var error: String?
     var hz: Double = 0
     var joints: [String: Double] = [:]
+    /// Las articulaciones del robot, en orden, y su unidad («deg», «0-100», «±100»), como las da LeRobot.
+    var jointNames: [String] = []
+    var units: [String: String] = [:]
     var episode = 0
     var target = 0
     var elapsed: Double = 0
@@ -65,8 +75,34 @@ struct RobotSession: Equatable {
     var limits: [String: ClosedRange<Double>] = [:]
     /// En vivo: reproduciendo un tramo de una demostración.
     var playing = false
+    /// Al probar un modelo: sus cámaras, con el nombre que espera (p. ej. up, side), en orden.
+    var cameras: [String] = []
+    /// En vivo: el modelo de órdenes cargado, la orden que está haciendo y cómo terminó la última.
+    var skillModel: SkillModel?
+    var skill: SkillRun?
+    var skillLast: SkillResult?
 
     var remaining: Double { max(0, limit - elapsed) }
+}
+
+/// Un modelo que entiende órdenes en palabras (SmolVLA, π0…), cargado en la sesión en vivo.
+struct SkillModel: Equatable {
+    var path: String
+    var type: String
+    var device: String
+    var note: String?
+}
+
+struct SkillRun: Equatable {
+    var instruction: String
+    var elapsed: Double
+    var limit: Double
+}
+
+struct SkillResult: Equatable {
+    var instruction: String
+    var reason: String   // time · stopped · interrupted · error: …
+    var seconds: Double
 }
 
 /// Un entrenamiento lanzado desde la app (corre aparte aunque se cierre la app).
@@ -76,13 +112,17 @@ struct PreflightCheck: Identifiable, Equatable {
     let key: String
     let state: State
     let detail: String
+    /// El nombre a mostrar cuando dice más que la clave (p. ej. «up · OsmoPocket3»).
+    var label: String? = nil
 
     var id: String { key }
     var title: String {
-        switch key {
+        if let label { return label }
+        return switch key {
         case "follower": "Follower"
         case "leader": "Leader"
         case "pose": "Poses"
+        case "cameras": "Cameras"
         case "camera": "Camera"
         case "permission": "Camera permission"
         case let k where k.hasPrefix("cam"): "Camera \(Int(k.dropFirst(3)).map { $0 + 1 } ?? 2)"
@@ -141,14 +181,13 @@ struct TrainWatch: Equatable {
 struct PolicyOption: Identifiable, Hashable {
     let id: String
     let name: String
-    let detail: String
     /// Se entrena partiendo de este modelo del Hub (SmolVLA).
     let basePath: String?
     let needsSmolVLA: Bool
 
     static let all: [PolicyOption] = [
-        PolicyOption(id: "act", name: "ACT", detail: "Fast and reliable with 50 demonstrations. Recommended to start.", basePath: nil, needsSmolVLA: false),
-        PolicyOption(id: "diffusion", name: "Diffusion", detail: "Smoother movements; takes longer to train.", basePath: nil, needsSmolVLA: false),
-        PolicyOption(id: "smolvla", name: "SmolVLA", detail: "Understands the task in words. Starts from lerobot/smolvla_base; slow on Mac.", basePath: "lerobot/smolvla_base", needsSmolVLA: true),
+        PolicyOption(id: "act", name: "ACT", basePath: nil, needsSmolVLA: false),
+        PolicyOption(id: "diffusion", name: "Diffusion", basePath: nil, needsSmolVLA: false),
+        PolicyOption(id: "smolvla", name: "SmolVLA", basePath: "lerobot/smolvla_base", needsSmolVLA: true),
     ]
 }

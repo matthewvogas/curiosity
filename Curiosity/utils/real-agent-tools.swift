@@ -1,20 +1,24 @@
 import Foundation
 
-/// Las herramientas con las que la IA maneja el robot real (SO-101), su prompt y cómo se describe cada
-/// acción. Solo datos y transformaciones: la ejecución está en use-live-robot.
+/// Las herramientas con las que la IA maneja el robot real, su prompt y cómo se describe cada acción. Solo datos y
+/// transformaciones: la ejecución está en use-live-robot.
 enum RealAgentTools {
-    static let joints = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+    /// Las articulaciones del robot conectado, en orden, su unidad («deg», «0-100», «±100») y su tipo en LeRobot.
+    /// Las pone la sesión en vivo con lo que dice LeRobot; nada de aquí supone un robot en particular.
+    static var joints: [String] = []
+    static var units: [String: String] = [:]
+    static var robotType = ""
 
-    static let definitions: [[String: Any]] = [
+    static var definitions: [[String: Any]] { [
         tool("get_state",
              "Reads where each joint of the real robot is, where it's heading and its allowed range. Use it before planning a move.",
              properties: [:], required: []),
         tool("move_joints",
-             "Moves the real robot toward these targets, slowly (about 40° per second). The user has to approve each move before it happens. Returns the state on arrival.",
+             "Moves the real robot toward these targets, slowly (about 40° per second for joints in degrees). The user has to approve each move before it happens. Returns the state on arrival.",
              properties: [
                 "targets": [
                     "type": "array",
-                    "description": "Targets. Degrees for the joints; the gripper goes from 0 to 100.",
+                    "description": "Targets, each in its joint's unit (see get_state).",
                     "items": [
                         "type": "object",
                         "properties": [
@@ -30,46 +34,96 @@ enum RealAgentTools {
              properties: [:], required: []),
         tool("go_home", "Slowly returns to the pose the robot was in when it was connected. Also requires approval.",
              properties: [:], required: []),
-    ]
+    ] }
 
     private static func tool(_ name: String, _ description: String, properties: [String: Any], required: [String]) -> [String: Any] {
         ["name": name, "description": description, "strict": true,
          "input_schema": ["type": "object", "properties": properties, "required": required, "additionalProperties": false] as [String: Any]]
     }
 
+    /// Mandarle una orden en palabras al modelo de órdenes (SmolVLA, π0…), que la hace solo a 30 Hz.
+    static let runSkill: [String: Any] = tool(
+        "run_skill",
+        "Gives a short instruction to the robot's own action model, which carries it out on its own in real time (30 times per second) and is much faster than move_joints. Use it for whole sub-tasks. The user approves it first. When it ends you get how it ended, the state and a picture from each camera.",
+        properties: [
+            "instruction": ["type": "string", "description": "One short, concrete action in English, like the ones the model was trained on. E.g. \"pick up the red cube and place it in the box\"."],
+            "seconds": ["type": "number", "description": "Maximum time it may take, 3 to 60 seconds."],
+        ], required: ["instruction", "seconds"])
+
+    /// Lo que se agrega al prompt cuando hay un modelo de órdenes cargado.
+    static func skillSection(_ model: SkillModel) -> String {
+        """
+
+
+        You also have an action model on the robot (\(model.type), \(URL(fileURLWithPath: model.path).lastPathComponent)). \
+        Work as a planner: split the user's request into short sub-tasks and give each one to run_skill; \
+        it does the movement much faster than you can with move_joints. After each run_skill, look at the \
+        pictures it returns and decide the next step (retry, correct with small move_joints, or move on). \
+        Use move_joints only for small fixes or when the model can't do something.
+        """
+    }
+
+    static func clampSkillSeconds(_ input: [String: Any]) -> Double {
+        min(60, max(3, (input["seconds"] as? NSNumber)?.doubleValue ?? 15))
+    }
+
     static let lookReferences: [String: Any] = tool(
         "look_references", "Shows the key-moment pictures from the demonstrations you studied, to compare with what you see.",
         properties: [:], required: [])
 
-    static func systemPrompt(robotName: String, limits: [String: ClosedRange<Double>]) -> String {
-        let ranges = joints.compactMap { j in
-            limits[j].map { "- \(j): \(format($0.lowerBound, j)) to \(format($0.upperBound, j)) (full travel \(format($0.upperBound - $0.lowerBound, j)))" }
-        }.joined(separator: "\n")
-        return """
-        You are the assistant in Curiosity and you control a REAL robotic arm, an SO-101 named \(robotName), \
-        on a table. It has a camera looking at the scene. The user asks you for things in natural language and \
-        you turn them into movements. If there's more than one camera (for example a top-down view), \
-        "look" gives you one picture from each, with its name: combine them to locate things.
+    /// Las habilidades del brazo: la IA señala en una foto y el brazo hace el movimiento entero solo.
+    static let armTools: [[String: Any]] = [
+        tool("pick",
+             "Picks up an object in ONE continuous move. In a picture from a calibrated camera you mark where each finger goes: two points on opposite sides of the object, across its narrow side, on its top edge. The arm works out the whole motion with its own kinematics (turns the gripper to match, opens just enough, goes down, closes, lifts) and the user approves it once. Returns whether the gripper is holding something (felt by the gripper) and new pictures.",
+             properties: [
+                "camera": ["type": "string", "description": "Name of the calibrated camera whose picture you're pointing in."],
+                "finger_a_x": ["type": "number", "description": "Pixel x where one finger should touch the object (on one side of it)."],
+                "finger_a_y": ["type": "number", "description": "Pixel y of that point."],
+                "finger_b_x": ["type": "number", "description": "Pixel x where the other finger should touch (the opposite side, across the object's narrow side)."],
+                "finger_b_y": ["type": "number", "description": "Pixel y of that point."],
+                "height_cm": ["type": "number", "description": "Your estimate of the object's height, in cm."],
+             ], required: ["camera", "finger_a_x", "finger_a_y", "finger_b_x", "finger_b_y", "height_cm"]),
+        tool("place",
+             "Puts down what the gripper holds, in ONE continuous move: you point at the spot in a calibrated camera's picture. Returns new pictures.",
+             properties: [
+                "camera": ["type": "string", "description": "Name of the calibrated camera whose picture you're pointing in."],
+                "x": ["type": "number", "description": "Pixel x of where it should go."],
+                "y": ["type": "number", "description": "Pixel y of where it should go."],
+                "height_cm": ["type": "number", "description": "Height of the object being held, in cm."],
+                "surface_cm": ["type": "number", "description": "Height of the surface it goes on: 0 for the table, or the height of the object it goes on top of."],
+             ], required: ["camera", "x", "y", "height_cm", "surface_cm"]),
+        tool("gripper", "Opens or closes the gripper and says whether it's holding something.",
+             properties: ["open": ["type": "boolean"]], required: ["open"]),
+    ]
 
-        Joints (degrees; the gripper from 0 to 100) and their allowed range. It comes from this robot's \
-        calibration (the furthest each motor moved during calibration, with a 3° margin), so it's its real freedom; \
-        each joint's 0° is the center of that travel:
+    static func systemPrompt(robotName: String, limits: [String: ClosedRange<Double>], calibratedCameras: [String]) -> String {
+        let ranges = joints.compactMap { j in
+            limits[j].map { "- \(j): \(format($0.lowerBound, j)) to \(format($0.upperBound, j))" }
+        }.joined(separator: "\n")
+        let cameras = calibratedCameras.isEmpty
+            ? "None of the cameras is calibrated yet, so pick and place can't locate things. Tell the user to calibrate the camera in the Arm tab (about a minute) before anything else."
+            : "Calibrated cameras (you can point in their pictures): \(calibratedCameras.joined(separator: ", "))."
+        return """
+        You are the assistant in Curiosity and you control a REAL robot (LeRobot type \(robotType)) named \(robotName), \
+        on a table, seen by one or more cameras.
+
+        How this works: you are the eyes and the planner; the arm has its own controller. You look, decide WHAT \
+        to do and point at it in a picture (pixels, using the grid on the picture). pick and place then do the \
+        whole movement on their own in one go, with the robot's kinematics and the limits of its calibration. \
+        The user approves each action once.
+        \(cameras)
+
+        The robot's joints and their range, from its calibration (° is degrees; other joints use that motor's 0–100 or \
+        −100–100 scale; a gripper at 0 is closed):
         \(ranges)
 
-        Rules, because this is a real robot:
-        - The user approves each move before it happens: explain in one sentence what you're going to do and why.
-        - Move in small steps (few joints and few degrees at a time) and look (look) to check.
-        - Before the first move, read the state (get_state) and look at the scene.
-        - The state includes where the gripper (gripper_cm) and the wrist (wrist_cm) are, in centimeters, in the \
-        robot base frame (z up), computed with its 3D model. Each move returns the before, the after, \
-        how much each joint changed, whether it got there and how far the gripper moved; also \
-        the previous moves. Use this to learn which way each joint moves and to correct.
-        - When you look, besides the cameras you get an image of the 3D model in the robot's current pose.
-        - Never try to go outside the range: the state tells you how much room is left on each side (room_to_min, \
-        room_to_max) and where in its travel it is (percent_of_range). If something seems odd or dangerous, \
-        stop and ask.
-        - You don't know in advance which way the gripper opens: try a small change and look.
-        - Reply in the user's language, briefly and without unnecessary jargon.
+        Rules:
+        - Start by looking (look). Find the objects in the calibrated camera's picture and point at them.
+        - Split the request into actions (pick this, place it there) and use pick/place for each. After each \
+        one, check the pictures it returns; if it missed or isn't holding anything, point more carefully and retry.
+        - Don't move joint by joint to reach things: that's what pick/place are for. Use move_joints only for \
+        small adjustments or gestures, never to approach objects.
+        - Explain in one short sentence what you're about to do. Reply in the user's language, briefly.
         """
     }
 
@@ -77,7 +131,7 @@ enum RealAgentTools {
     static func describe(joints current: [String: Double], targets: [String: Double], limits: [String: ClosedRange<Double>]) -> [String: Any] {
         ["joints": joints.map { j -> [String: Any] in
             var out: [String: Any] = ["joint": j, "position": round1(current[j] ?? 0), "target": round1(targets[j] ?? 0),
-                                      "unit": j == "gripper" ? "0-100" : "°"]
+                                      "unit": units[j] == "deg" ? "°" : units[j] ?? ""]
             if let l = limits[j] {
                 let q = current[j] ?? 0, span = l.upperBound - l.lowerBound
                 out["min"] = round1(l.lowerBound)
@@ -118,6 +172,8 @@ enum RealAgentTools {
                 return "\(j): \(format(current[j] ?? 0, j)) → \(format(v, j))"
             }.joined(separator: "\n")
         case "go_home": return "All joints to the starting pose."
+        case "run_skill":
+            return "The action model moves the robot on its own for up to \(Int(clampSkillSeconds(input))) s:\n«\(input["instruction"] as? String ?? "")»"
         default: return nil
         }
     }
@@ -128,13 +184,12 @@ enum RealAgentTools {
         case "move_joints": "Move the robot"
         case "look": "Looking through the camera"
         case "go_home": "Return to the starting pose"
+        case "run_skill": "Action model"
         default: name
         }
     }
 
-    static func format(_ v: Double, _ joint: String) -> String {
-        joint == "gripper" ? "\(Int(v.rounded()))" : "\(Int(v.rounded()))°"
-    }
+    static func format(_ v: Double, _ joint: String) -> String { JointUnits.format(v, units[joint]) }
 
     private static func round1(_ v: Double) -> Double { (v * 10).rounded() / 10 }
 }

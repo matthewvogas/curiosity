@@ -1,0 +1,72 @@
+.wrap {
+  height: 100%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12vh 32px 48px;
+}
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 36px;
+  text-align: center;
+}
+.mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #232326, #161618);
+  box-shadow: inset 0 0 0 1px var(--line-strong), 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.title {
+  font-size: var(--text-xxl);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.subtitle {
+  color: var(--muted);
+  font-size: var(--text-l);
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 280px));
+  gap: 12px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  min-height: 150px;
+  text-align: left;
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  transition: background var(--fast), border-color var(--fast), transform var(--normal) var(--ease);
+}
+.card:hover {
+  background: var(--raised);
+  border-color: var(--line-strong);
+}
+.cardIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--fill);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.cardTitle {
+  font-weight: 600;
+  font-size: 14px;
+}
+.cardDetail {
+  color: var(--muted);
+  margin-top: 3px;
+}

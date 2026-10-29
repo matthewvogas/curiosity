@@ -52,8 +52,11 @@ struct ChatView: View {
                             ChatWelcome(robotName: robotName, hasKey: hasKey, suggestions: suggestions,
                                         onPick: { onSend($0) }, onOpenSettings: onOpenSettings)
                         }
-                        ForEach(items) { item in
-                            ChatRow(item: item, onApprove: onApprove, onReject: onReject).id(item.id)
+                        ForEach(ChatEntry.group(items)) { entry in
+                            switch entry {
+                            case .item(let item): ChatRow(item: item, onApprove: onApprove, onReject: onReject).id(item.id)
+                            case .photos(let id, let photos): PhotoStrip(photos: photos).id(id)
+                            }
                         }
                         if isRunning { ThinkingRow().id("thinking") }
                         if let error {
@@ -134,8 +137,6 @@ private struct ChatWelcome: View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 Text("Talk to \(robotName)").font(.title2.weight(.semibold))
-                Text("Ask for tasks in your own words. The AI looks at the scene, plans and moves the robot in the simulation.")
-                    .font(.callout).foregroundStyle(Theme.muted)
             }
             if hasKey {
                 VStack(alignment: .leading, spacing: 6) {
@@ -154,8 +155,6 @@ private struct ChatWelcome: View {
             } else {
                 VStack(alignment: .leading, spacing: Theme.Space.s) {
                     Text("Connect an AI model").font(.callout.weight(.semibold))
-                    Text("Paste your Anthropic API key. It's stored in your Mac's Keychain.")
-                        .font(.caption).foregroundStyle(Theme.muted)
                     Button("Open Settings", action: onOpenSettings)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.regular)
@@ -167,6 +166,91 @@ private struct ChatWelcome: View {
         }
         .padding(.top, Theme.Space.l)
     }
+}
+
+/// Un renglón a dibujar: un mensaje, o varias fotos seguidas que la IA miró, juntas en un solo grupo.
+private enum ChatEntry: Identifiable {
+    case item(ChatItem)
+    case photos(id: UUID, [Data])
+
+    var id: UUID {
+        switch self {
+        case .item(let item): item.id
+        case .photos(let id, _): id
+        }
+    }
+
+    /// Las imágenes consecutivas se juntan: así una vuelta que miró por tres cámaras ocupa una línea.
+    static func group(_ items: [ChatItem]) -> [ChatEntry] {
+        var out: [ChatEntry] = []
+        for item in items {
+            if case .image(let jpeg) = item.kind {
+                if case .photos(let id, let photos)? = out.last {
+                    out[out.count - 1] = .photos(id: id, photos + [jpeg])
+                } else {
+                    out.append(.photos(id: item.id, [jpeg]))
+                }
+            } else {
+                out.append(.item(item))
+            }
+        }
+        return out
+    }
+}
+
+/// Lo que la IA miró, discreto: cerrado dice cuántas fotos; abierto, miniaturas que se agrandan con un clic.
+private struct PhotoStrip: View {
+    let photos: [Data]
+    @State private var open = false
+    @State private var zoom: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            Button { withAnimation(.snappy(duration: 0.2)) { open.toggle() } } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: IconName.camera.rawValue).font(.system(size: 11))
+                    Text(photos.count == 1 ? "1 photo" : "\(photos.count) photos").font(.callout)
+                    Icon(name: .chevron, size: 9, weight: .semibold).rotationEffect(.degrees(open ? 90 : 0))
+                }
+                .foregroundStyle(Theme.muted)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            if open {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: Theme.Space.s)],
+                          alignment: .leading, spacing: Theme.Space.s) {
+                    ForEach(photos.indices, id: \.self) { i in
+                        Button { zoom = i } label: {
+                            Image(nsImage: NSImage(data: photos[i]) ?? NSImage())
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .clipShape(.rect(cornerRadius: 8))
+                                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Enlarge")
+                    }
+                }
+            }
+        }
+        .sheet(item: Binding(get: { zoom.map(ZoomedPhoto.init) }, set: { zoom = $0?.id })) { z in
+            VStack(spacing: Theme.Space.m) {
+                HStack {
+                    Text("Photo \(z.id + 1) of \(photos.count)").font(.headline)
+                    Spacer()
+                    Button("Done") { zoom = nil }.keyboardShortcut(.cancelAction)
+                }
+                Image(nsImage: NSImage(data: photos[z.id]) ?? NSImage())
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(.rect(cornerRadius: Theme.Radius.card))
+            }
+            .padding(Theme.Space.xl)
+            .frame(minWidth: 640, minHeight: 480)
+        }
+    }
+
+    private struct ZoomedPhoto: Identifiable { let id: Int }
 }
 
 private struct ChatRow: View {
@@ -186,18 +270,12 @@ private struct ChatRow: View {
                     .background(Color.primary.opacity(0.09), in: .rect(cornerRadius: 18))
             }
         case .assistant(let text):
-            Text(LocalizedStringKey(text))
+            Text(Self.markdown(text))
                 .textSelection(.enabled)
+                .lineSpacing(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .action(let title, let detail, let running, let failed):
-            // Las acciones de la IA, discretas: solo texto (con un indicador mientras corren).
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
-                if running { ProgressView().controlSize(.mini) }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.callout).foregroundStyle(failed ? Theme.red : Theme.muted)
-                    if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(failed ? Theme.red : Theme.faint) }
-                }
-            }
+            ActionRow(title: title, detail: detail, running: running, failed: failed)
         case .image(let jpeg):
             Image(nsImage: NSImage(data: jpeg) ?? NSImage())
                 .resizable()
@@ -211,6 +289,52 @@ private struct ChatRow: View {
             ApprovalRow(title: title, detail: detail, state: state, onApprove: onApprove, onReject: onReject)
         }
     }
+}
+
+extension ChatRow {
+    /// Markdown de la IA (negritas, código, enlaces) conservando sus saltos de línea y listas.
+    static func markdown(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
+    }
+}
+
+/// Las acciones de la IA, discretas: una fila que se despliega si trae detalle (abierta si falló).
+private struct ActionRow: View {
+    let title: String
+    let detail: String
+    let running: Bool
+    let failed: Bool
+    @State private var open = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Button { if !detail.isEmpty { withAnimation(.snappy(duration: 0.2)) { open.toggle() } } } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Group {
+                        if running { ProgressView().controlSize(.mini) }
+                        else if detail.isEmpty { Text("›") }
+                        else { Icon(name: .chevron, size: 9, weight: .semibold).rotationEffect(.degrees(isOpen ? 90 : 0)) }
+                    }
+                    .frame(width: 12)
+                    Text(title).font(.callout).lineLimit(isOpen ? nil : 1)
+                }
+                .foregroundStyle(failed ? Theme.red : Theme.muted)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .disabled(detail.isEmpty)
+            if isOpen, !detail.isEmpty {
+                Text(detail)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(failed ? Theme.red : Theme.faint)
+                    .textSelection(.enabled)
+                    .padding(.leading, 18)
+            }
+        }
+    }
+
+    private var isOpen: Bool { open || failed }
 }
 
 private struct NoticeRow: View {

@@ -1,0 +1,67 @@
+.body {
+  background: var(--stage);
+}
+.title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.subtitle {
+  color: var(--faint);
+  font-weight: 400;
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+}
+.divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--line-strong);
+}
+.speed {
+  height: 28px;
+  min-width: 36px;
+  padding: 0 6px;
+  border-radius: var(--r-s);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+}
+.speed:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* ---------- Sobre el escenario ---------- */
+.center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.center > * {
+  pointer-events: auto;
+}
+.hud {
+  position: absolute;
+  left: var(--s-4);
+  bottom: var(--s-4);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  pointer-events: none;
+}
+.recordBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--s-4);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.recordBar > * {
+  pointer-events: auto;
+}

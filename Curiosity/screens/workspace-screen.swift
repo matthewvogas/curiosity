@@ -13,11 +13,12 @@ struct WorkspaceScreen: View {
     @Environment(UseDevices.self) private var devices
     @State private var showingRecord = false
 
-    enum PanelTab: String, Hashable { case chat, control, simulation, scene }
+    enum PanelTab: String, Hashable { case chat, control, simulation, scene, notes }
     /// Se recuerda la última pestaña.
     @AppStorage("panel.tab") private var tab: PanelTab = .chat
     @State private var panelVisible = true
     @State private var showingModel = false
+    @State private var robotNotes = UseRobotNotes()
 
     private static let speeds: [Double] = [0.25, 0.5, 1, 2]
 
@@ -60,7 +61,7 @@ struct WorkspaceScreen: View {
         // El panel sí respeta la toolbar: empieza debajo de ella.
         .overlay(alignment: .trailing) {
             if panelVisible {
-                FloatingPanel(tabs: [(.chat, "Chat"), (.control, "Control"), (.simulation, "Simulation"), (.scene, "Scene")],
+                FloatingPanel(tabs: [(.chat, "Chat"), (.control, "Control"), (.simulation, "Simulation"), (.scene, "Scene"), (.notes, "Notes")],
                               selection: $tab) {
                     switch tab {
                     case .chat:
@@ -88,9 +89,19 @@ struct WorkspaceScreen: View {
                                         onScreenshot: { Task { await simulation.screenshot() } },
                                         onShowModel: { showingModel = true })
                     case .scene:
-                        SceneControls(objects: simulation.objects,
-                                      onAdd: { o in Task { try? await simulation.addObject(o) } },
+                        SceneControls(objects: simulation.objects, positions: simulation.state.objectPositions,
+                                      onAdd: { o in Task { try? await simulation.addObject(o, drop: true) } },
+                                      onUpdate: { id, changes in Task { await simulation.updateObject(id, changes) } },
+                                      onPose: { id in await simulation.objectPose(id) },
                                       onRemove: simulation.removeObject)
+                    case .notes:
+                        RobotNotesPanel(facts: simulation.robotFacts, notes: robotNotes.notes, learned: robotNotes.learned,
+                                        onNotes: robotNotes.setNotes, onRemoveLesson: robotNotes.removeLesson,
+                                        onReveal: robotNotes.reveal)
+                            .task(id: robot.id) {
+                                robotNotes.open(robot.id)
+                                chat.onRemember = { [robotNotes] in robotNotes.reload() }
+                            }
                     }
                 }
                 .frame(width: Theme.chatWidth)
@@ -170,6 +181,13 @@ struct WorkspaceScreen: View {
                     Button("Side") { simulation.view("lado") }
                     Button("Top") { simulation.view("arriba") }
                 }
+                Section("Views around the scene") {
+                    ForEach(UseSimulation.viewAngles, id: \.name) { v in
+                        Toggle(v.name, isOn: Binding(get: { simulation.views.contains(v.name) }, set: { on in
+                            if on { simulation.views.insert(v.name) } else { simulation.views.remove(v.name) }
+                        }))
+                    }
+                }
                 if let cams = simulation.model?.cameras, !cams.isEmpty {
                     Section("Robot camera") {
                         Picker("Camera", selection: Binding(get: { simulation.activeCamera ?? "" },
@@ -193,7 +211,7 @@ struct WorkspaceScreen: View {
                     .disabled(recording.isActive || devices.devices.allSatisfy { !$0.canTeleoperate })
                     .help(devices.devices.contains(where: \.canTeleoperate)
                           ? "Record demos by moving the simulated robot with your leader"
-                          : "Connect your SO-101 and its leader to record in the simulation")
+                          : "Connect a robot and its leader to record in the simulation")
             }
         }
 
@@ -219,7 +237,7 @@ struct WorkspaceScreen: View {
             SettingsLink {
                 Label("Settings", systemImage: IconName.settings.rawValue)
             }
-            .help("Settings: connect API keys and choose the model (⌘,)")
+            .help("Settings (⌘,)")
         }
     }
 }

@@ -17,9 +17,8 @@ struct LiveControls: View {
                     Text("Control").font(.headline)
                     Spacer()
                     Button("Starting pose", action: onHome).buttonStyle(.link)
-                        .help("Slowly returns to the pose it was in when connected")
+                        .help("Back to the pose it had when connected")
                 }
-                Text("The robot moves slowly to where you set it.").font(.caption).foregroundStyle(Theme.muted)
                 ForEach(joints, id: \.self) { j in
                     if let range = limits[j] {
                         VStack(alignment: .leading, spacing: 2) {

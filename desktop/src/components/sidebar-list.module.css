@@ -1,0 +1,151 @@
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 6px 0 8px;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+.nav {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0 6px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  margin-top: 14px;
+  padding: 0 4px 0 8px;
+  color: var(--faint);
+  font-size: var(--text-s);
+  font-weight: 500;
+}
+.headerToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--faint);
+}
+.headerToggle:hover {
+  color: var(--muted);
+}
+.headerChevron {
+  opacity: 0;
+  transition: transform var(--normal) var(--ease), opacity var(--fast);
+}
+.header:hover .headerChevron,
+.headerChevron[data-collapsed="true"] {
+  opacity: 1;
+}
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 30px;
+  margin-bottom: 3px;
+  padding: 0 6px 0 8px;
+  border-radius: var(--r-m);
+  color: var(--ink);
+  text-align: left;
+  transition: background var(--fast);
+}
+.row:hover {
+  background: var(--hover);
+}
+.row[data-selected="true"] {
+  background: var(--selected);
+}
+.row[data-muted="true"] {
+  color: var(--muted);
+}
+.row[data-compact="true"] {
+  min-height: 27px;
+  font-size: var(--text-s);
+}
+/* Una columna fija para todos los íconos (logo, navegación, robots y tareas): quedan alineados al centro. */
+.rowIcon {
+  width: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  flex: none;
+}
+.rowText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rowTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rowMeta {
+  color: var(--faint);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.disclose {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  border-radius: 4px;
+  flex: none;
+  transition: transform var(--normal) var(--ease);
+}
+.disclose:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+.disclose[data-open="true"] {
+  transform: rotate(90deg);
+}
+.nested {
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+}
+.hint {
+  padding: 6px 8px;
+  color: var(--faint);
+  font-size: var(--text-s);
+}
+.footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  padding: 0 8px 0 12px;
+  border-top: 1px solid var(--line);
+}
+.footerStatus {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--text-s);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

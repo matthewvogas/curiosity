@@ -5,6 +5,8 @@ import Observation
 @Observable
 final class UseSimulation {
     let engine = SimulationQueries()
+    /// La API key y el modelo, para crear objetos con IA.
+    private let settings: UseSettings
 
     private(set) var engineReady = false
     private(set) var loadingText: String?
@@ -23,7 +25,27 @@ final class UseSimulation {
     private var loadedRobotID: String?
     private var current: (robot: Robot, profile: [String: Any])?
 
-    init() {
+    /// Vistas fijas alrededor de la escena (lados y esquinas), para mirar y para que la IA vea lo que la cámara
+    /// de arriba no ve. Se eligen en el menú de vista y se recuerdan entre robots.
+    static let viewAngles: [(name: String, azimuth: Double)] = [
+        ("Front", 0), ("Front-left", 45), ("Left", 90), ("Back-left", 135),
+        ("Back", 180), ("Back-right", -135), ("Right", -90), ("Front-right", -45),
+    ]
+    var views = Set(UserDefaults.standard.stringArray(forKey: "sim.views") ?? []) {
+        didSet {
+            UserDefaults.standard.set(Array(views), forKey: "sim.views")
+            Task { await placeViews() }
+        }
+    }
+    private var rootLink: String?
+    private var modelCameras: [String] = []
+    private var placedViews: [String] = []
+    /// Cómo es el brazo (del ejecutor del motor) y dónde va cada cámara: para describirle el robot a la IA.
+    private var armInfo: [String: Any]?
+    private var cameraLinks: [String: String] = [:]
+
+    init(settings: UseSettings) {
+        self.settings = settings
         engine.onMessage = { [weak self] message in self?.handle(message) }
         // Un visor nuevo empieza vacío: se le vuelve a cargar el robot abierto.
         engine.onAttach = { [weak self] in Task { @MainActor in self?.reload() } }  // fuera de la actualización de la vista
@@ -148,16 +170,73 @@ final class UseSimulation {
         model = m
     }
 
+    /// Pone un objeto en la escena. Con `drop`, el motor elige un lugar libre y lo suelta desde un poco más arriba.
     @discardableResult
-    func addObject(_ object: SceneObject) async throws -> Int {
-        let id = try await engine.addObject([
+    func addObject(_ object: SceneObject, drop: Bool = false) async throws -> Int {
+        var spec: [String: Any] = [
             "shape": object.shape, "size": object.size, "mass": object.mass, "color": object.color,
-            "pos": object.pos, "yaw": object.yaw, "fixed": object.fixed, "name": object.name,
-        ])
-        var added = object
+            "yaw": object.yaw, "fixed": object.fixed, "name": object.name,
+        ]
+        if !drop { spec["pos"] = object.pos }
+        if let euler = object.euler { spec["euler"] = euler }
+        if let parts = object.parts {
+            spec["parts"] = parts.map { ["shape": $0.shape, "size": $0.size, "pos": $0.pos, "euler": $0.euler, "color": $0.color] }
+        }
+        if drop { spec["drop"] = true }
+        return try await addObject(spec: spec).id
+    }
+
+    /// Pone un objeto a partir de su especificación para el motor; devuelve su id y cómo quedó.
+    private func addObject(spec: [String: Any]) async throws -> (id: Int, object: SceneObject) {
+        let id = try await engine.addObject(spec)
+        var added = Self.parseObject(spec)
         added.id = id
+        // Si lo ubicó el motor, se pregunta dónde quedó.
+        if spec["pos"] == nil, let pose = (try? await engine.objectPoses())?[id] { added.pos = pose.pos }
         objects.append(added)
-        return id
+        return (id, added)
+    }
+
+    /// Un objeto nuevo a partir de una descripción («una rueda», «un escritorio», «un cuchillo»): la IA lo arma
+    /// con piezas simples en tamaño y peso reales, y se suelta en un lugar libre de la mesa.
+    func designObject(_ description: String) async throws -> (id: Int, object: SceneObject) {
+        let text = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw Self.failure("Describe the object first.") }
+        guard let key = settings.anthropicKey else { throw Self.failure("Add your Claude API key in Settings to create objects with AI.") }
+        let response = try await AnthropicQueries.createMessage(apiKey: key, body: ObjectDesigner.request(description: text, model: settings.modelID))
+        let added = try await addObject(spec: try ObjectDesigner.parse(response))
+        flash("Added \(added.object.name)")
+        return added
+    }
+
+    /// Cambia un objeto de la escena: moverlo o girarlo (queda quieto ahí y la física sigue), o su peso, color,
+    /// nombre y si está fijo. `changes` en unidades del motor: {pos (m), yaw o euler (grados), mass, color, name, fixed}.
+    func updateObject(_ id: Int, _ changes: [String: Any]) async {
+        var changes = changes
+        // Un objeto con giro completo: el nuevo giro alrededor de z conserva los otros dos.
+        if let yaw = changes["yaw"] as? Double, let e = objects.first(where: { $0.id == id })?.euler, e.count == 3 {
+            changes["yaw"] = nil
+            changes["euler"] = [e[0], e[1], yaw]
+        }
+        guard (try? await engine.updateObject(id, changes)) == true, let i = objects.firstIndex(where: { $0.id == id }) else { return }
+        var o = objects[i]
+        if let pos = changes["pos"] as? [Double] { o.pos = pos }
+        if let yaw = changes["yaw"] as? Double { o.yaw = yaw; o.euler = nil }
+        if let euler = changes["euler"] as? [Double] { o.euler = euler }
+        if let mass = changes["mass"] as? Double { o.mass = mass }
+        if let name = changes["name"] as? String { o.name = name }
+        if let fixed = changes["fixed"] as? Bool { o.fixed = fixed }
+        if let color = changes["color"] as? String {
+            o.color = color
+            // Un color nuevo pinta todas las piezas (como en el motor).
+            o.parts = o.parts?.map { var p = $0; p.color = color; return p }
+        }
+        objects[i] = o
+    }
+
+    /// Dónde está y cómo está girado un objeto ahora (m en el marco de la base, grados alrededor de z).
+    func objectPose(_ id: Int) async -> (pos: [Double], yaw: Double)? {
+        (try? await engine.objectPoses())?[id]
     }
 
     func removeObject(_ id: Int) {
@@ -165,7 +244,18 @@ final class UseSimulation {
         objects.removeAll { $0.id == id }
     }
 
-    func capture(camera: String?) async throws -> Data { try await engine.capture(camera: camera) }
+    func capture(camera: String?, grid: Bool = false) async throws -> Data { try await engine.capture(camera: camera, grid: grid) }
+    func cameraSize(_ camera: String) async throws -> (width: Int, height: Int) { try await engine.cameraSize(camera) }
+
+    /// Una habilidad del ejecutor (agarrar, dejar, abrir la pinza…): corre sola y devuelve cómo salió.
+    func skill(_ spec: [String: Any]) async throws -> [String: Any] {
+        if state.paused { togglePause() }
+        return try await withTaskCancellationHandler {
+            try await engine.skill(spec)
+        } onCancel: { [engine] in
+            Task { @MainActor in engine.cancelSkill() }
+        }
+    }
 
     /// Deja correr la simulación `seconds` segundos de tiempo simulado (o hasta 3× eso de reloj).
     func run(seconds: Double) async {
@@ -177,6 +267,67 @@ final class UseSimulation {
     }
 
     // MARK: - Mensajes del motor
+
+    /// Pone las vistas elegidas alrededor de lo que hay en escena (las piezas del robot y los objetos), a una
+    /// distancia que lo deja entero en la imagen. Van en la base del robot: son cámaras fijas, como «Overhead».
+    func placeViews() async {
+        guard model != nil, let root = rootLink else { return }
+        for name in placedViews { engine.removeCamera(name) }
+        placedViews = []
+        if !views.isEmpty, let links = try? await engine.linkPositions() {
+            let points = Array(links.values) + state.objectPositions.values.compactMap { $0 }
+            let lo = (0..<3).map { i in points.map { $0[i] }.min() ?? 0 }
+            let hi = (0..<3).map { i in points.map { $0[i] }.max() ?? 0 }
+            let center = (0..<3).map { (lo[$0] + hi[$0]) / 2 }
+            let radius = max(0.15, sqrt((0..<3).map { pow((hi[$0] - lo[$0]) / 2, 2) }.reduce(0, +)))
+            let fovy = 55.0, elevation = 35.0 * .pi / 180
+            let distance = radius / tan(fovy / 2 * .pi / 180) * 1.15
+            for (name, azimuth) in Self.viewAngles where views.contains(name) {
+                let a = azimuth * .pi / 180
+                let dir = [cos(elevation) * cos(a), cos(elevation) * sin(a), sin(elevation)]
+                let camera = "\(name) view"
+                engine.addCamera(["name": camera, "link": root, "pos": (0..<3).map { center[$0] + dir[$0] * distance },
+                                  "quat": Self.lookQuat(back: dir), "fovy": fovy, "width": 640, "height": 480])
+                placedViews.append(camera)
+            }
+        }
+        model?.cameras = modelCameras + placedViews
+        if let active = activeCamera, !(model?.cameras.contains(active) ?? false) { showCamera(nil) }
+    }
+
+    /// La orientación de una cámara de MuJoCo (mira hacia −z, y arriba) cuyo −z apunta en contra de `back`
+    /// (unitario), con la vertical hacia arriba. Cuaternión [x, y, z, w].
+    private static func lookQuat(back z: [Double]) -> [Double] {
+        func cross(_ a: [Double], _ b: [Double]) -> [Double] { [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]] }
+        func unit(_ v: [Double]) -> [Double] { let n = sqrt(v.map { $0 * $0 }.reduce(0, +)); return v.map { $0 / n } }
+        let x = unit(cross([0, 0, 1], z)), y = cross(z, x)
+        // Matriz de rotación con columnas x, y, z → cuaternión.
+        let (m00, m11, m22) = (x[0], y[1], z[2])
+        let trace = m00 + m11 + m22
+        if trace > 0 {
+            let s = sqrt(trace + 1) * 2
+            return [(y[2] - z[1]) / s, (z[0] - x[2]) / s, (x[1] - y[0]) / s, s / 4]
+        } else if m00 > m11 && m00 > m22 {
+            let s = sqrt(1 + m00 - m11 - m22) * 2
+            return [s / 4, (y[0] + x[1]) / s, (z[0] + x[2]) / s, (y[2] - z[1]) / s]
+        } else if m11 > m22 {
+            let s = sqrt(1 + m11 - m00 - m22) * 2
+            return [(y[0] + x[1]) / s, s / 4, (z[1] + y[2]) / s, (z[0] - x[2]) / s]
+        } else {
+            let s = sqrt(1 + m22 - m00 - m11) * 2
+            return [(z[0] + x[2]) / s, (z[1] + y[2]) / s, s / 4, (x[1] - y[0]) / s]
+        }
+    }
+
+    /// Lo medido del robot para la IA (brazo, pinza, cámaras); nil hasta que el modelo está cargado.
+    var robotFacts: [String]? {
+        guard model != nil else { return nil }
+        let cameras = (model?.cameras ?? []).map { name -> String in
+            let link = cameraLinks[name]
+            return link == nil || link == rootLink ? "\(name) (fixed)" : "\(name) (on \(link!))"
+        }
+        return RobotNotes.facts(effector: armInfo, cameras: cameras)
+    }
 
     private func handle(_ m: [String: Any]) {
         switch m["type"] as? String {
@@ -191,6 +342,18 @@ final class UseSimulation {
             loadingText = nil
             model = Self.parseModel(m)
             objects = model?.objects ?? []
+            rootLink = m["root"] as? String
+            modelCameras = model?.cameras ?? []
+            placedViews = []   // al cargar, el motor empieza sin las vistas
+            armInfo = nil
+            cameraLinks = [:]
+            Task {
+                await placeViews()
+                armInfo = try? await engine.effector()
+                cameraLinks = Dictionary(((try? await engine.cameraInfo()) ?? []).compactMap { c in
+                    (c["name"] as? String).map { ($0, c["link"] as? String ?? "") }
+                }) { a, _ in a }
+            }
             // Abre quieto: la física corre cuando la persona le da a reproducir (o cuando la IA lo mueve).
             engine.pause(true)
             state.paused = true
@@ -221,7 +384,19 @@ final class UseSimulation {
         SceneObject(id: (o["id"] as? NSNumber)?.intValue ?? 0, shape: o["shape"] as? String ?? "box",
                     size: (o["size"] as? [NSNumber])?.map(\.doubleValue) ?? [], mass: double(o["mass"]),
                     color: o["color"] as? String ?? "#cccccc", pos: (o["pos"] as? [NSNumber])?.map(\.doubleValue) ?? [0, 0, 0],
-                    yaw: double(o["yaw"]), fixed: o["fixed"] as? Bool ?? false, name: o["name"] as? String ?? "")
+                    yaw: double(o["yaw"]), fixed: o["fixed"] as? Bool ?? false, name: o["name"] as? String ?? "",
+                    parts: (o["parts"] as? [[String: Any]])?.map(parsePart),
+                    euler: (o["euler"] as? [NSNumber])?.map(\.doubleValue))
+    }
+
+    private static func parsePart(_ p: [String: Any]) -> ObjectPart {
+        ObjectPart(shape: p["shape"] as? String ?? "box", size: (p["size"] as? [NSNumber])?.map(\.doubleValue) ?? [],
+                   pos: (p["pos"] as? [NSNumber])?.map(\.doubleValue) ?? [0, 0, 0],
+                   euler: (p["euler"] as? [NSNumber])?.map(\.doubleValue) ?? [0, 0, 0], color: p["color"] as? String ?? "#9a9a9f")
+    }
+
+    private static func failure(_ text: String) -> NSError {
+        NSError(domain: "Curiosity", code: 8, userInfo: [NSLocalizedDescriptionKey: text])
     }
 
     private static func parseState(_ m: [String: Any]) -> SimulationState {

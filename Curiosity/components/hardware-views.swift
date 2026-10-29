@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Un robot físico conectado (por ahora, solo el SO-101): su nombre y qué motores respondieron.
+/// Un robot físico conectado: su nombre y qué motores respondieron.
 /// Solo dibuja: datos y acciones llegan por props.
 struct HardwareTestView: View {
     let port: String
@@ -19,11 +19,11 @@ struct HardwareTestView: View {
             Section {
                 TextField("Name", text: $name, prompt: Text(placeholder))
                 LabeledContent("Port", value: port.replacingOccurrences(of: "/dev/", with: ""))
-                LabeledContent("Robot", value: "SO-101 · Feetech STS3215 motors")
-                LabeledContent("Other robots") { Text("Coming soon").foregroundStyle(Theme.faint) }
-            } footer: {
-                Text("“Test” opens the port, checks which motors respond and closes it again. It only reads and doesn’t move anything. If LeRobot is using this port, close it first.")
-                    .foregroundStyle(Theme.muted)
+                if !found.isEmpty {
+                    // Lo que respondió de verdad en la última prueba, no lo que se supone.
+                    LabeledContent("Motors", value: Dictionary(grouping: found, by: \.modelName)
+                        .map { "\($0.value.count) × \($0.key)" }.sorted().joined(separator: " · "))
+                }
             }
             .disabled(testing)
 
@@ -37,7 +37,7 @@ struct HardwareTestView: View {
                         Text(result).foregroundStyle(resultIsError ? Theme.red : Theme.ink)
                     } else if !connected {
                         Circle().fill(Theme.faint).frame(width: 8, height: 8)
-                        Text("Unplugged: connect it over USB to test it").foregroundStyle(Theme.muted)
+                        Text("Unplugged").foregroundStyle(Theme.muted)
                     } else {
                         Text("Not tested").foregroundStyle(Theme.muted)
                     }

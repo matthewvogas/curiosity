@@ -1,0 +1,100 @@
+.panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--s-2) var(--s-4) var(--s-4);
+  scrollbar-width: thin;
+}
+.section {
+  border-bottom: 1px solid var(--line);
+}
+.section:last-child {
+  border-bottom: 0;
+}
+.sectionHead {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  font-weight: 500;
+  color: var(--ink);
+  text-align: left;
+}
+.sectionHead svg {
+  color: var(--faint);
+}
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: 2px 0 var(--s-4);
+}
+.buttons {
+  display: flex;
+  gap: 6px;
+}
+.buttons > * {
+  flex: 1;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  min-height: 22px;
+}
+.select {
+  width: auto;
+  height: 26px;
+  font-size: var(--text-s);
+}
+.slider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.statTitle {
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.statValue {
+  font-family: var(--mono);
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--s-1);
+  font-weight: 500;
+}
+.subhead > button {
+  margin-right: -8px;
+}
+.keyframe {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.link {
+  flex: 1;
+  text-align: left;
+  color: var(--blue);
+}
+.link:hover {
+  text-decoration: underline;
+}
+.faint {
+  color: var(--faint);
+  font-size: var(--text-s);
+}
+.caption {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  margin-top: var(--s-1);
+}

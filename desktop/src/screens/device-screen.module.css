@@ -1,0 +1,56 @@
+/* Título arriba y subtítulo debajo, como la barra de título de macOS. */
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.2;
+}
+.titleText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.titleText {
+  font-weight: 600;
+}
+.subtitle {
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modeSwitch {
+  margin-left: var(--s-4);
+}
+.modeSwitch[data-disabled="true"] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.muted {
+  margin: 0;
+  color: var(--muted);
+}
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.task {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.taskTabs {
+  display: flex;
+  justify-content: center;
+  padding: var(--s-3) var(--s-4) 0;
+}
+.taskBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}

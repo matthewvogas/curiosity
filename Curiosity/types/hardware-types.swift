@@ -59,6 +59,14 @@ nonisolated struct FoundMotor: Identifiable, Equatable, Codable, Sendable {
 }
 
 /// Un robot físico conectado por USB (un adaptador serie). Su id es el puerto.
+/// Una cámara calibrada: su proyección (3×4, coordenadas de imagen 0…1) y qué tan bien ajustó.
+struct CameraFit: Codable, Equatable {
+    var matrix: [Double]
+    var errorPx: Double
+    var points: Int
+    var date = Date()
+}
+
 struct Device: Identifiable, Codable, Equatable {
     var id: String              // /dev/cu.usbmodem… (el follower)
     var name: String
@@ -77,12 +85,25 @@ struct Device: Identifiable, Codable, Equatable {
     /// Otras cámaras (por nombre: los números cambian al enchufar otra) que se ven en vivo y que la IA puede
     /// mirar, p. ej. una vista desde arriba.
     var extraCameraNames: [String]?
+    /// Dónde está cada cámara respecto del robot (la calibración con la pinza), por nombre de cámara.
+    var cameraCalibrations: [String: CameraFit]?
+
+    /// El tipo de robot y de leader en LeRobot (--robot.type, --teleop.type).
+    var robotType: String?
+    var teleopType: String?
+    /// El modelo 3D (de la simulación) que copia al robot en vivo. "" = ninguno.
+    var modelID: String?
 
     var extraNames: [String] { extraCameraNames ?? [] }
 
-    var canTeleoperate: Bool { followerID != nil && leaderPort != nil && leaderID != nil }
+    /// Lo elegido o, si no se eligió, lo que se deduce de los motores que respondieron.
+    var robotKind: String? { robotType ?? (guess == "SO-101" ? "so101_follower" : nil) }
+    var teleopKind: String? { teleopType ?? (guess == "SO-101" ? "so101_leader" : nil) }
+    var model: String? { modelID ?? (guess == "SO-101" ? "bundled.so101" : nil) }
+
+    var canTeleoperate: Bool { robotKind != nil && teleopKind != nil && followerID != nil && leaderPort != nil && leaderID != nil }
     var canRecord: Bool { canTeleoperate && cameraIndex != nil }
-    var canRunPolicy: Bool { followerID != nil && cameraIndex != nil }
+    var canRunPolicy: Bool { robotKind != nil && followerID != nil && cameraIndex != nil }
 
     /// Lo que se ve en la lista cuando nadie le puso nombre.
 
